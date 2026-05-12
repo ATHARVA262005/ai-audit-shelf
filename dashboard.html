@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Audit — Library</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3345;
+    --text: #e1e4ed;
+    --text2: #8b90a0;
+    --accent: #6c8cff;
+    --accent2: #4a6adf;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 240px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  .sidebar-header p {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 4px;
+  }
+  .nav { padding: 12px 8px; flex: 1; }
+  .nav-item {
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text2);
+    transition: all 0.15s;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--accent); color: #fff; font-weight: 600; }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+  }
+  .page-header {
+    margin-bottom: 28px;
+  }
+  .page-header h2 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .page-header p {
+    color: var(--text2);
+    font-size: 14px;
+    margin-top: 4px;
+  }
+
+  /* Stats bar */
+  .stats {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    flex: 1;
+  }
+  .stat-card .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .card-meta { font-size: 12px; color: var(--text2); display: flex; gap: 12px; flex-wrap: wrap; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-version { background: var(--accent); color: #fff; }
+  .badge-feature { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+
+  /* Chapter table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text2);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); cursor: pointer; }
+
+  /* Detail panel */
+  .detail-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 20px;
+    display: none;
+  }
+  .detail-panel.open { display: block; }
+  .detail-panel h3 { font-size: 18px; margin-bottom: 16px; }
+  .detail-row { margin-bottom: 14px; }
+  .detail-label { font-size: 11px; text-transform: uppercase; color: var(--text2); letter-spacing: 0.5px; margin-bottom: 4px; }
+  .detail-value { font-size: 14px; }
+  .detail-value.prompt-block {
+    background: var(--surface2);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin-top: 4px;
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* Diff view */
+  .diff-section { margin-bottom: 16px; }
+  .diff-section h4 { font-size: 13px; margin-bottom: 8px; }
+  .diff-item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 4px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+  .diff-kept { background: rgba(108,140,255,0.1); color: var(--accent); }
+  .diff-added { background: rgba(74,222,128,0.1); color: var(--green); }
+  .diff-removed { background: rgba(248,113,113,0.1); color: var(--red); }
+
+  /* Search */
+  .search-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .search-bar input, .search-bar select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    flex: 1;
+    min-width: 150px;
+  }
+  .search-bar input:focus, .search-bar select:focus { border-color: var(--accent); }
+  .search-bar button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .search-bar button:hover { background: var(--accent2); }
+
+  /* Buttons */
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent2); }
+
+  .action-bar { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* Shelf tree */
+  .shelf-section { margin-bottom: 28px; }
+  .shelf-section h3 {
+    font-size: 14px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text2);
+  }
+  .empty .icon { font-size: 48px; margin-bottom: 16px; }
+  .empty p { font-size: 14px; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: var(--text2); }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h1>AI Audit</h1>
+    <p>Git for AI workflows</p>
+  </div>
+  <div class="nav">
+    <div class="nav-item active" data-page="shelf"><span class="nav-icon">&#x1f4da;</span> Library</div>
+    <div class="nav-item" data-page="books"><span class="nav-icon">&#x1f4d6;</span> Books</div>
+    <div class="nav-item" data-page="chapters"><span class="nav-icon">&#x1f4dd;</span> Chapters</div>
+    <div class="nav-item" data-page="search"><span class="nav-icon">&#x1f50d;</span> Search</div>
+    <div class="nav-item" data-page="diff"><span class="nav-icon">&#x1f504;</span> Diff</div>
+  </div>
+</div>
+
+<div class="main" id="content">
+  <div class="loading">Loading...</div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+let booksData = [];
+let chaptersData = [];
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+async function loadAll() {
+  [booksData, chaptersData] = await Promise.all([
+    fetchJSON(`${API}/books`),
+    fetchJSON(`${API}/chapters`),
+  ]);
+}
+
+// --- Renderers ---
+
+function renderShelf() {
+  const features = {};
+  booksData.forEach(b => {
+    (features[b.feature] = features[b.feature] || []).push(b);
+  });
+
+  let html = `
+    <div class="page-header"><h2>Library</h2><p>Browse all features organized as a bookshelf</p></div>
+    <div class="stats">
+      <div class="stat-card"><div class="label">Books</div><div class="value">${booksData.length}</div></div>
+      <div class="stat-card"><div class="label">Chapters</div><div class="value">${chaptersData.length}</div></div>
+      <div class="stat-card"><div class="label">Features</div><div class="value">${Object.keys(features).length}</div></div>
+    </div>`;
+
+  for (const [feature, books] of Object.entries(features)) {
+    html += `<div class="shelf-section"><h3>${feature}</h3><div class="card-grid">`;
+    books.forEach(b => {
+      html += `
+        <div class="card" onclick="showBookDetail('${b.id}')">
+          <div class="card-title">
+            ${b.title}
+            <span class="badge badge-version">v${b.version}</span>
+          </div>
+          <div class="card-meta">
+            <span>${b.id}</span>
+            <span>${b.chapter_ids.length} chapters</span>
+            ${b.parent_book_id ? `<span>edits ${b.parent_book_id}</span>` : ''}
+          </div>
+        </div>`;
+    });
+    html += `</div></div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderBooks() {
+  let html = `
+    <div class="page-header"><h2>Books</h2><p>All versioned feature bundles</p></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Title</th><th>Feature</th><th>Version</th><th>Chapters</th><th>Created</th></tr></thead><tbody>`;
+  booksData.forEach(b => {
+    html += `<tr onclick="showBookDetail('${b.id}')">
+      <td>${b.id}</td><td>${b.title}</td><td>${b.feature}</td>
+      <td><span class="badge badge-version">v${b.version}</span></td>
+      <td>${b.chapter_ids.length}</td><td>${new Date(b.created_at).toLocaleDateString()}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>
+    <div class="detail-panel" id="bookDetail"></div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderChapters() {
+  let html = `
+    <div class="page-header"><h2>Chapters</h2><p>Every atomic AI action logged in the system</p></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Prompt</th></tr></thead><tbody>`;
+  chaptersData.forEach(ch => {
+    html += `<tr onclick="showChapterDetail('${ch.id}')">
+      <td>${ch.id}</td><td>${ch.actor}</td><td>${ch.source}</td>
+      <td>${new Date(ch.timestamp).toLocaleString()}</td>
+      <td>${ch.prompt.length > 60 ? ch.prompt.slice(0, 60) + '...' : ch.prompt}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>
+    <div class="detail-panel" id="chapterDetail"></div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderSearch() {
+  let html = `
+    <div class="page-header"><h2>Search</h2><p>Filter chapters by actor, keyword, or date</p></div>
+    <div class="search-bar">
+      <input type="text" id="sActor" placeholder="Actor (e.g. alice)">
+      <input type="text" id="sKeyword" placeholder="Keyword">
+      <input type="date" id="sAfter">
+      <button onclick="runSearch()">Search</button>
+    </div>
+    <div id="searchResults"></div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+async function runSearch() {
+  const params = new URLSearchParams();
+  const actor = document.getElementById('sActor').value;
+  const keyword = document.getElementById('sKeyword').value;
+  const after = document.getElementById('sAfter').value;
+  if (actor) params.set('actor', actor);
+  if (keyword) params.set('keyword', keyword);
+  if (after) params.set('after', after + 'T00:00:00');
+
+  const results = await fetchJSON(`${API}/search/chapters?${params}`);
+  let html = '';
+  if (results.length === 0) {
+    html = '<div class="empty"><p>No matching chapters found.</p></div>';
+  } else {
+    html = `<div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Prompt</th></tr></thead><tbody>`;
+    results.forEach(ch => {
+      html += `<tr onclick="showChapterDetail('${ch.id}')">
+        <td>${ch.id}</td><td>${ch.actor}</td><td>${ch.source}</td>
+        <td>${new Date(ch.timestamp).toLocaleString()}</td>
+        <td>${ch.prompt.length > 60 ? ch.prompt.slice(0, 60) + '...' : ch.prompt}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  html += '<div class="detail-panel" id="chapterDetail"></div>';
+  document.getElementById('searchResults').innerHTML = html;
+}
+
+function renderDiff() {
+  let opts = booksData.map(b => `<option value="${b.id}">${b.id} — ${b.title} (v${b.version})</option>`).join('');
+  let html = `
+    <div class="page-header"><h2>Diff</h2><p>Compare two book editions side-by-side</p></div>
+    <div class="search-bar">
+      <select id="diffA">${opts}</select>
+      <select id="diffB">${opts}</select>
+      <button onclick="runDiff()">Compare</button>
+    </div>
+    <div id="diffResults"></div>`;
+  document.getElementById('content').innerHTML = html;
+  // Default second select to a different book
+  if (booksData.length > 1) document.getElementById('diffB').value = booksData[1].id;
+}
+
+async function runDiff() {
+  const a = document.getElementById('diffA').value;
+  const b = document.getElementById('diffB').value;
+  const diff = await fetchJSON(`${API}/diff/books?id_a=${a}&id_b=${b}`);
+
+  let html = `<div class="detail-panel open">
+    <h3>${diff.book_a.id} (v${diff.book_a.version}) &rarr; ${diff.book_b.id} (v${diff.book_b.version})</h3>`;
+
+  if (diff.kept.length === 0 && diff.added.length === 0 && diff.removed.length === 0) {
+    html += '<p style="color:var(--text2)">No differences found.</p>';
+  } else {
+    if (diff.kept.length) {
+      html += `<div class="diff-section"><h4 style="color:var(--accent)">Kept (${diff.kept.length})</h4>`;
+      diff.kept.forEach(ch => { html += `<div class="diff-item diff-kept">= ${ch.id} &mdash; ${ch.prompt}</div>`; });
+      html += '</div>';
+    }
+    if (diff.added.length) {
+      html += `<div class="diff-section"><h4 style="color:var(--green)">Added (${diff.added.length})</h4>`;
+      diff.added.forEach(ch => { html += `<div class="diff-item diff-added">+ ${ch.id} &mdash; ${ch.prompt}</div>`; });
+      html += '</div>';
+    }
+    if (diff.removed.length) {
+      html += `<div class="diff-section"><h4 style="color:var(--red)">Removed (${diff.removed.length})</h4>`;
+      diff.removed.forEach(ch => { html += `<div class="diff-item diff-removed">- ${ch.id} &mdash; ${ch.prompt}</div>`; });
+      html += '</div>';
+    }
+  }
+  html += '</div>';
+  document.getElementById('diffResults').innerHTML = html;
+}
+
+// --- Detail views ---
+
+async function showBookDetail(bookId) {
+  const book = booksData.find(b => b.id === bookId);
+  if (!book) return;
+  const chapters = book.chapter_ids.map(cid => chaptersData.find(c => c.id === cid)).filter(Boolean);
+
+  let html = `
+    <h3>${book.title}</h3>
+    <div class="detail-row"><div class="detail-label">Book ID</div><div class="detail-value">${book.id}</div></div>
+    <div class="detail-row"><div class="detail-label">Feature</div><div class="detail-value">${book.feature}</div></div>
+    <div class="detail-row"><div class="detail-label">Version</div><div class="detail-value"><span class="badge badge-version">v${book.version}</span></div></div>
+    <div class="detail-row"><div class="detail-label">Created</div><div class="detail-value">${new Date(book.created_at).toLocaleString()}</div></div>
+    ${book.parent_book_id ? `<div class="detail-row"><div class="detail-label">Parent</div><div class="detail-value">${book.parent_book_id}</div></div>` : ''}
+    <div class="detail-row"><div class="detail-label">Chapters (${chapters.length})</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Actor</th><th>Prompt</th></tr></thead><tbody>`;
+  chapters.forEach(ch => {
+    html += `<tr onclick="showChapterDetail('${ch.id}')"><td>${ch.id}</td><td>${ch.actor}</td><td>${ch.prompt}</td></tr>`;
+  });
+  html += `</tbody></table></div>
+    <div class="action-bar">
+      <a class="btn btn-primary" href="${API}/export/book/${book.id}?format=markdown" target="_blank">Export Markdown</a>
+      <a class="btn" href="${API}/export/book/${book.id}?format=json" target="_blank">Export JSON</a>
+    </div>`;
+
+  const panel = document.getElementById('bookDetail');
+  panel.innerHTML = html;
+  panel.classList.add('open');
+  panel.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function showChapterDetail(chapterId) {
+  const ch = chaptersData.find(c => c.id === chapterId);
+  if (!ch) return;
+
+  let html = `
+    <h3>Chapter ${ch.id}</h3>
+    <div class="detail-row"><div class="detail-label">Actor</div><div class="detail-value">${ch.actor}</div></div>
+    <div class="detail-row"><div class="detail-label">Source</div><div class="detail-value">${ch.source}</div></div>
+    <div class="detail-row"><div class="detail-label">Timestamp</div><div class="detail-value">${new Date(ch.timestamp).toLocaleString()}</div></div>
+    <div class="detail-row"><div class="detail-label">Prompt</div><div class="detail-value prompt-block">${ch.prompt}</div></div>
+    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${ch.result}</div></div>`;
+
+  const panel = document.getElementById('chapterDetail');
+  panel.innerHTML = html;
+  panel.classList.add('open');
+  panel.scrollIntoView({ behavior: 'smooth' });
+}
+
+// --- Navigation ---
+
+const pages = { shelf: renderShelf, books: renderBooks, chapters: renderChapters, search: renderSearch, diff: renderDiff };
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    pages[item.dataset.page]();
+  });
+});
+
+// --- Init ---
+loadAll().then(() => renderShelf());
+</script>
+</body>
+</html>
