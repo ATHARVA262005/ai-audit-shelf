@@ -1,8 +1,14 @@
-# 🦾 AI Audit
+
+
+![AI Audit Shelf logo](aiAuditShelf.jpg)
 
 **Git-like versioning for AI workflows, organized as books and chapters.**
 
 Every AI action gets logged as an immutable "chapter." Chapters bundle into "books" (versioned features). Books live on a "shelf" grouped by feature. Edit a feature? A new edition is created — the old one stays as a permanent audit trail.
+
+Repository: [github.com/ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA262005/ai-audit-shelf)
+
+[![Issues](https://img.shields.io/github/issues/ATHARVA262005/ai-audit-shelf.svg)](https://github.com/ATHARVA262005/ai-audit-shelf/issues)
 
 ```
 Library
@@ -402,6 +408,26 @@ Full interactive docs at `http://localhost:8000/docs` when the server is running
 
 ---
 
+---
+
+## Contributing
+
+Contributions, bug reports, ideas, and feature requests are welcome!
+
+- [Open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) to report bugs or suggest new features.
+- Make a pull request for fixes or improvements.
+- Star the repo if you like it!
+
+If you have questions, open a discussion or contact [@ATHARVA262005](https://github.com/ATHARVA262005).
+
+For larger contributions, please [open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) first to discuss your idea.
+
+```
+```
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
+
+```
+
