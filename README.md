@@ -1,6 +1,6 @@
 
 
-![AI Audit Shelf logo](aiAuditShelf.jpg)
+![AI Audit Shelf Cover](aiAuditShelf-cover.jpg)
 
 **Git-like versioning for AI workflows, organized as books and chapters.**
 
