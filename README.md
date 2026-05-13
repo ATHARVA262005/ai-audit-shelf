@@ -8,6 +8,9 @@ Every AI action gets logged as an immutable "chapter." Chapters bundle into "boo
 
 Repository: [github.com/ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA262005/ai-audit-shelf)
 
+> ⭐️ **If you find this project useful, please consider giving it a star!**  
+> [ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA262005/ai-audit-shelf)
+
 [![Issues](https://img.shields.io/github/issues/ATHARVA262005/ai-audit-shelf.svg)](https://github.com/ATHARVA262005/ai-audit-shelf/issues)
 
 ```
