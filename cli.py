@@ -314,11 +314,14 @@ def cmd_diff_books(args):
     conn.close()
 
 
+__version__ = "0.1.0"
+
 def main():
     parser = argparse.ArgumentParser(
         prog="audit",
         description="AI Audit - Git-like versioning for AI workflows, organized as books and chapters.",
     )
+    parser.add_argument("--version", action="version", version=f"AI Audit CLI v{__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     # add-chapter
