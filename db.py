@@ -110,7 +110,7 @@ def get_chapter(chapter_id: str, conn: sqlite3.Connection) -> Optional[Chapter]:
 
 
 def list_chapters(conn: sqlite3.Connection) -> list[Chapter]:
-    rows = conn.execute("SELECT * FROM chapters ORDER BY timestamp").fetchall()
+    rows = conn.execute("SELECT * FROM chapters ORDER BY timestamp DESC").fetchall()
     return [
         Chapter(
             id=r["id"],
