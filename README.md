@@ -35,6 +35,14 @@ AI workflows are opaque. Prompts go in, results come out, and nobody can trace w
 
 ---
 
+## Operator Guide
+
+If you are introducing AI Audit Shelf to a founder, operator, or non-technical teammate, start with the audit problem before the book/chapter metaphor:
+
+- [Audit UX for operators](docs/audit-ux-for-operators.md)
+
+---
+
 ## Quick Start
 
 ### Prerequisites
