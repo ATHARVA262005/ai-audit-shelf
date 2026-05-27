@@ -155,6 +155,8 @@ The dashboard connects to `http://localhost:8000` and provides:
 - **Search** — filter by actor, keyword, date
 - **Diff** — compare two editions side-by-side
 
+> **API URL config:** If your API server runs on a different port or host, type the URL into the input at the bottom of the sidebar. The value is saved in your browser and persists across reloads.
+
 ---
 
 ### 4. Agent Demo
