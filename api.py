@@ -1,11 +1,11 @@
-"""FastAPI server for the AI Audit system."""
+﻿"""FastAPI server for the AI Audit system."""
 
 import json
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import FastAPI, HTTPException, Query, Depends, Header
+from fastapi import FastAPI, HTTPException, Query, Depends, Header, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
@@ -29,6 +29,37 @@ app.add_middleware(
 API_KEY = os.environ.get("AUDIT_API_KEY", "")
 
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+
+@app.websocket("/ws/events")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
 def verify_api_key(x_api_key: Optional[str] = Header(None)):
     """Simple API key auth. Set AUDIT_API_KEY env var to enable."""
     if API_KEY and x_api_key != API_KEY:
@@ -48,7 +79,7 @@ def get_db():
 # --- Chapters ---
 
 @app.post("/chapter", response_model=dict, dependencies=[Depends(verify_api_key)])
-def api_add_chapter(
+async def api_add_chapter(
     prompt: str,
     result: str,
     actor: str = "anonymous",
@@ -66,7 +97,11 @@ def api_add_chapter(
         source=source,
     )
     save_chapter(chapter, conn)
-    return {"status": "created", "chapter": chapter.to_dict()}
+    
+    chapter_dict = chapter.to_dict()
+    await manager.broadcast({"type": "NEW_CHAPTER", "data": chapter_dict})
+    
+    return {"status": "created", "chapter": chapter_dict}
 
 
 @app.get("/chapters", response_model=list[dict])
@@ -109,7 +144,7 @@ def api_search_chapters(
 # --- Books ---
 
 @app.post("/book", response_model=dict, dependencies=[Depends(verify_api_key)])
-def api_create_book(
+async def api_create_book(
     title: str,
     chapter_ids: list[str],
     feature: Optional[str] = None,
@@ -129,7 +164,11 @@ def api_create_book(
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     save_book(book, conn)
-    return {"status": "created", "book": book.to_dict()}
+    
+    book_dict = book.to_dict()
+    await manager.broadcast({"type": "NEW_BOOK", "data": book_dict})
+    
+    return {"status": "created", "book": book_dict}
 
 
 @app.get("/books", response_model=list[dict])
@@ -148,7 +187,7 @@ def api_get_book(book_id: str, conn=Depends(get_db)):
 
 
 @app.post("/book/{book_id}/edition", response_model=dict, dependencies=[Depends(verify_api_key)])
-def api_new_edition(
+async def api_new_edition(
     book_id: str,
     title: Optional[str] = None,
     chapter_ids: Optional[list[str]] = None,
@@ -173,7 +212,11 @@ def api_new_edition(
         parent_book_id=parent.id,
     )
     save_book(new_book, conn)
-    return {"status": "created", "book": new_book.to_dict()}
+    
+    book_dict = new_book.to_dict()
+    await manager.broadcast({"type": "NEW_BOOK", "data": book_dict})
+    
+    return {"status": "created", "book": book_dict}
 
 
 # --- Export & Diff ---
@@ -220,7 +263,7 @@ def api_diff_books(
     id_b: str = Query(..., description="Second book ID"),
     conn=Depends(get_db),
 ):
-    """Compare two books — shows added, removed, and kept chapters."""
+    """Compare two books – shows added, removed, and kept chapters."""
     book_a = get_book(id_a, conn)
     book_b = get_book(id_b, conn)
     if book_a is None:
