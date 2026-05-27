@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -428,11 +428,10 @@ function renderShelf() {
     (features[b.feature] = features[b.feature] || []).push(b);
   });
 
-  // Calculate dynamic validation pass rate for v0.2.0
   const validatedChapters = chaptersData.filter(c => c.validation_status);
   const passedChapters = validatedChapters.filter(c => c.validation_status === 'passed');
-  const passRate = validatedChapters.length > 0 
-    ? Math.round((passedChapters.length / validatedChapters.length) * 100) 
+  const passRate = validatedChapters.length > 0
+    ? Math.round((passedChapters.length / validatedChapters.length) * 100)
     : 100;
 
   let html = `
@@ -492,7 +491,7 @@ function renderChapters() {
     <div class="table-wrap"><table>
       <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Validation</th><th>Prompt</th></tr></thead><tbody>`;
   chaptersData.forEach(ch => {
-    const valBadge = ch.validation_status 
+    const valBadge = ch.validation_status
       ? `<span class="badge" style="background:${ch.validation_status === 'passed' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color:${ch.validation_status === 'passed' ? 'var(--green)' : 'var(--red)'}">${escapeHtml(ch.validation_status.toUpperCase())}</span>`
       : '<span style="color:var(--text2); font-size:0.85rem;">—</span>';
 
@@ -565,7 +564,6 @@ function renderDiff() {
     </div>
     <div id="diffResults"></div>`;
   document.getElementById('content').innerHTML = html;
-  // Default second select to a different book
   if (booksData.length > 1) document.getElementById('diffB').value = booksData[1].id;
 }
 
@@ -581,14 +579,12 @@ async function runDiff() {
     if (diff.kept.length === 0 && diff.added.length === 0 && diff.removed.length === 0) {
       html += '<p style="color:var(--text2)">No differences found.</p>';
     } else {
-      // 1. Structured Delta Summary
       html += `<div style="display:flex; gap:12px; margin-bottom:24px;">`;
       if (diff.kept.length) html += `<span class="badge diff-kept">${diff.kept.length} Kept</span>`;
       if (diff.added.length) html += `<span class="badge diff-added">+ ${diff.added.length} Added</span>`;
       if (diff.removed.length) html += `<span class="badge diff-removed">- ${diff.removed.length} Removed</span>`;
       html += `</div>`;
 
-      // 2. Line-by-Line Semantic Diff Comparison (v0.2.0 Killer Feature)
       if (diff.steps_comparison && diff.steps_comparison.length > 0) {
         html += `<h4 style="margin: 24px 0 12px; color:var(--accent);">Line-by-Line Semantic Workflow Comparison</h4>`;
         diff.steps_comparison.forEach(step => {
@@ -596,8 +592,8 @@ async function runDiff() {
             <div class="step-diff-card" style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:16px;">
               <h5 style="margin-bottom:12px; font-size:13px; display:flex; justify-content:space-between; align-items:center; letter-spacing:0.5px;">
                 <span>STEP ${step.step_number}: ${escapeHtml(step.chapter_a.id)} &rarr; ${escapeHtml(step.chapter_b.id)}</span>
-                ${step.are_identical 
-                  ? '<span class="badge diff-kept">IDENTICAL</span>' 
+                ${step.are_identical
+                  ? '<span class="badge diff-kept">IDENTICAL</span>'
                   : '<span class="badge" style="background:rgba(251,191,36,0.1); color:var(--yellow); border: 1px solid rgba(251,191,36,0.2)">MODIFIED</span>'}
               </h5>
               <div class="diff-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
@@ -618,7 +614,6 @@ async function runDiff() {
         });
       }
 
-      // 3. Simple List lists fallback
       html += `<div style="margin-top:24px; border-top:1px solid var(--border); padding-top:20px;">`;
       if (diff.added.length) {
         html += `<div class="diff-section"><h4 style="color:var(--green)">Added Chapters</h4>`;
@@ -667,7 +662,6 @@ async function showBookDetail(bookId) {
     <h3>${escapeHtml(book.title)}</h3>
     <div class="detail-row"><div class="detail-label">Book ID</div><div class="detail-value">${escapeHtml(book.id)}</div></div>
     <div class="detail-row"><div class="detail-label">Feature</div><div class="detail-value">${escapeHtml(book.feature)}</div></div>
-
     <div class="detail-row"><div class="detail-label">Version</div><div class="detail-value"><span class="badge badge-version">v${book.version}</span></div></div>
     <div class="detail-row"><div class="detail-label">Created</div><div class="detail-value">${new Date(book.created_at).toLocaleString()}</div></div>
     ${book.parent_book_id ? `<div class="detail-row"><div class="detail-label">Parent</div><div class="detail-value">${escapeHtml(book.parent_book_id)}</div></div>` : ''}
@@ -693,7 +687,7 @@ async function showChapterDetail(chapterId) {
   const ch = chaptersData.find(c => c.id === chapterId);
   if (!ch) return;
 
-  const reproducibility = (ch.model || ch.temperature !== null || ch.seed !== null) 
+  const reproducibility = (ch.model || ch.temperature !== null || ch.seed !== null)
     ? `
       <div class="detail-row"><div class="detail-label">Model</div><div class="detail-value"><code>${escapeHtml(ch.model || '—')}</code></div></div>
       <div class="detail-row"><div class="detail-label">Temperature</div><div class="detail-value">${ch.temperature !== null ? ch.temperature : '—'}</div></div>
@@ -741,9 +735,40 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
-// --- Init ---
-loadAndRender();
+// --- WebSocket (uses getApiUrl() so it respects user-configured API URL) ---
 
+function initWebSocket() {
+  const wsUrl = getApiUrl().replace(/^http/, 'ws') + '/ws/events';
+  const ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      const eventData = JSON.parse(event.data);
+      if (eventData.type === 'NEW_CHAPTER') {
+        chaptersData.unshift(eventData.data);
+      } else if (eventData.type === 'NEW_BOOK') {
+        booksData.unshift(eventData.data);
+      }
+      const activeNavItem = document.querySelector('.nav-item.active');
+      if (activeNavItem && pages[activeNavItem.dataset.page]) {
+        pages[activeNavItem.dataset.page]();
+      }
+    } catch (e) {
+      console.warn('WebSocket message parse error:', e);
+    }
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onclose = () => {
+    setTimeout(initWebSocket, 5000);
+  };
+}
+
+// --- Init ---
+loadAndRender().then(() => {
+  initWebSocket();
+});
 </script>
 </body>
 </html>
