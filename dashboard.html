@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -339,6 +339,7 @@
 
 <script>
 function getApiUrl() {
+<<<<<<< HEAD
   return (localStorage.getItem('api_url') || 'http://localhost:8000').replace(/\/+$/, '');
 }
 
@@ -356,6 +357,15 @@ function escapeAttr(str) {
   return escapeHtml(str).replace(/'/g, '&#39;');
 }
 
+=======
+  const stored = localStorage.getItem('auditApiUrl');
+  if (stored) return stored.replace(/\/\$/, '');
+  const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+  const host = location.hostname || 'localhost';
+  return proto + '//' + host + ':8000';
+}
+const API = getApiUrl();
+>>>>>>> 127d18b (fix: remove BOM, fix broadcast dead connection leak, restore getApiUrl, add ws.onerror, improve error logging)
 let booksData = [];
 let chaptersData = [];
 
@@ -564,6 +574,7 @@ function renderDiff() {
     </div>
     <div id="diffResults"></div>`;
   document.getElementById('content').innerHTML = html;
+  // Default second select to a different book
   if (booksData.length > 1) document.getElementById('diffB').value = booksData[1].id;
 }
 
@@ -754,7 +765,11 @@ function initWebSocket() {
         pages[activeNavItem.dataset.page]();
       }
     } catch (e) {
+<<<<<<< HEAD
       console.warn('WebSocket message parse error:', e);
+=======
+      console.error('Failed to process WebSocket message:', e, event.data);
+>>>>>>> 127d18b (fix: remove BOM, fix broadcast dead connection leak, restore getApiUrl, add ws.onerror, improve error logging)
     }
   };
 

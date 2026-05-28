@@ -1,4 +1,4 @@
-﻿"""FastAPI server for the AI Audit system."""
+"""FastAPI server for the AI Audit system."""
 
 import json
 import os
@@ -563,8 +563,12 @@ def api_diff_books(
     id_b: str = Query(..., description="Second book ID"),
     conn=Depends(get_db),
 ):
+<<<<<<< HEAD
     """Compare two books — shows added, removed, kept chapters, and a line-by-line semantic diff of changes (v0.2.0 Killer Feature)."""
     import difflib
+=======
+    """Compare two books — shows added, removed, and kept chapters."""
+>>>>>>> 127d18b (fix: remove BOM, fix broadcast dead connection leak, restore getApiUrl, add ws.onerror, improve error logging)
     book_a = get_book(id_a, conn)
     book_b = get_book(id_b, conn)
     if book_a is None:
