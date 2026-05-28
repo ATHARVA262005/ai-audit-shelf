@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -299,7 +299,14 @@
 </div>
 
 <script>
-const API = 'http://localhost:8000';
+function getApiUrl() {
+  const stored = localStorage.getItem('auditApiUrl');
+  if (stored) return stored.replace(/\/\$/, '');
+  const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+  const host = location.hostname || 'localhost';
+  return proto + '//' + host + ':8000';
+}
+const API = getApiUrl();
 let booksData = [];
 let chaptersData = [];
 
@@ -439,6 +446,7 @@ function renderDiff() {
     </div>
     <div id="diffResults"></div>`;
   document.getElementById('content').innerHTML = html;
+  // Default second select to a different book
   if (booksData.length > 1) document.getElementById('diffB').value = booksData[1].id;
 }
 
@@ -552,8 +560,12 @@ function initWebSocket() {
       if (activeNavItem && pages[activeNavItem.dataset.page]) {
         pages[activeNavItem.dataset.page]();
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Failed to process WebSocket message:', e, event.data);
+    }
   };
+
+  ws.onerror = () => ws.close();
 
   ws.onclose = () => {
     setTimeout(initWebSocket, 5000);

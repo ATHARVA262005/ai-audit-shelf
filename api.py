@@ -1,4 +1,4 @@
-﻿"""FastAPI server for the AI Audit system."""
+"""FastAPI server for the AI Audit system."""
 
 import json
 import os
@@ -38,14 +38,18 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
+        dead = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
             except Exception:
-                pass
+                dead.append(connection)
+        for connection in dead:
+            self.disconnect(connection)
 
 manager = ConnectionManager()
 
@@ -263,7 +267,7 @@ def api_diff_books(
     id_b: str = Query(..., description="Second book ID"),
     conn=Depends(get_db),
 ):
-    """Compare two books – shows added, removed, and kept chapters."""
+    """Compare two books — shows added, removed, and kept chapters."""
     book_a = get_book(id_a, conn)
     book_b = get_book(id_b, conn)
     if book_a is None:
