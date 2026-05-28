@@ -1,4 +1,4 @@
-﻿"""FastAPI server for the AI Audit system."""
+"""FastAPI server for the AI Audit system."""
 
 import json
 import os
