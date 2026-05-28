@@ -1,180 +1,75 @@
-"""SQLite storage layer for the AI Audit system."""
-
-import sqlite3
-import json
-from pathlib import Path
-from typing import Optional
-
+﻿import sqlite3, json
+from typing import Optional, List
 from models import Chapter, Book
 
-DB_PATH = Path(__file__).parent / "audit.db"
-
-
-def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect("audit_shelf.db")
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
 def init_db(conn: Optional[sqlite3.Connection] = None):
-    """Create tables if they don't exist."""
-    should_close = conn is None
-    if conn is None:
+    passed_conn = conn is not None
+    if not passed_conn:
         conn = get_connection()
+    assert conn is not None
+    should_close = not passed_conn
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS chapters (
-            id TEXT PRIMARY KEY,
-            prompt TEXT NOT NULL,
-            result TEXT NOT NULL,
-            actor TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            source TEXT DEFAULT 'manual',
-            metadata TEXT DEFAULT '{}'
+            id TEXT PRIMARY KEY, prompt TEXT NOT NULL, result TEXT NOT NULL,
+            actor TEXT NOT NULL, timestamp TEXT NOT NULL, source TEXT NOT NULL
         );
-
         CREATE TABLE IF NOT EXISTS books (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            chapter_ids TEXT NOT NULL,
-            version INTEGER DEFAULT 1,
-            feature TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            parent_book_id TEXT,
-            metadata TEXT DEFAULT '{}'
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, chapter_ids TEXT NOT NULL,
+            version INTEGER NOT NULL, feature TEXT NOT NULL, created_at TEXT NOT NULL,
+            parent_book_id TEXT, metadata TEXT DEFAULT '{}'
         );
-
-        CREATE TABLE IF NOT EXISTS counters (
-            name TEXT PRIMARY KEY,
-            value INTEGER DEFAULT 0
+        CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL
         );
     """)
-    # Ensure counters exist
     for name in ("chapter", "book"):
-        conn.execute(
-            "INSERT OR IGNORE INTO counters (name, value) VALUES (?, 0)",
-            (name,),
-        )
+        conn.execute("INSERT OR IGNORE INTO counters (name, value) VALUES (?, 0)", (name,))
+    from auth import get_password_hash
+    for u, p, r in [("admin","admin123","admin"),("auditor","auditor123","auditor"),("agent","agent123","agent")]:
+        conn.execute("INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)", (u, get_password_hash(p), r))
+    conn.executescript("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS chapters_fts USING fts5(id UNINDEXED, prompt, result);
+        CREATE TRIGGER IF NOT EXISTS after_chapter_insert AFTER INSERT ON chapters BEGIN
+            INSERT INTO chapters_fts(id, prompt, result) VALUES (new.id, new.prompt, new.result);
+        END;
+        CREATE TRIGGER IF NOT EXISTS after_chapter_delete AFTER DELETE ON chapters BEGIN
+            DELETE FROM chapters_fts WHERE id = old.id;
+        END;
+    """)
+    if conn.execute("SELECT COUNT(*) as c FROM chapters_fts").fetchone()["c"] == 0:
+        conn.execute("INSERT INTO chapters_fts(id, prompt, result) SELECT id, prompt, result FROM chapters;")
     conn.commit()
     if should_close:
         conn.close()
 
+def next_id(conn, prefix):
+    conn.execute("UPDATE counters SET value = value + 1 WHERE name = ?", (prefix,))
+    return f"{prefix[0]}_{conn.execute('SELECT value FROM counters WHERE name = ?', (prefix,)).fetchone()['value']:03d}"
 
-def next_id(conn: sqlite3.Connection, prefix: str) -> str:
-    """Generate next sequential ID like c_001, b_002."""
-    conn.execute(
-        "UPDATE counters SET value = value + 1 WHERE name = ?",
-        (prefix,),
-    )
-    row = conn.execute(
-        "SELECT value FROM counters WHERE name = ?", (prefix,)
-    ).fetchone()
-    return f"{prefix[0]}_{row['value']:03d}"
+def get_user(username, conn):
+    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    return dict(row) if row else None
 
-
-# --- Chapter operations ---
-
-def save_chapter(chapter: Chapter, conn: sqlite3.Connection):
-    conn.execute(
-        """INSERT INTO chapters (id, prompt, result, actor, timestamp, source, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            chapter.id,
-            chapter.prompt,
-            chapter.result,
-            chapter.actor,
-            chapter.timestamp,
-            chapter.source,
-            json.dumps(chapter.metadata),
-        ),
-    )
+def create_user(username, password_hash, role, conn):
+    conn.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", (username, password_hash, role))
     conn.commit()
 
-
-def get_chapter(chapter_id: str, conn: sqlite3.Connection) -> Optional[Chapter]:
-    row = conn.execute(
-        "SELECT * FROM chapters WHERE id = ?", (chapter_id,)
-    ).fetchone()
-    if row is None:
-        return None
-    return Chapter(
-        id=row["id"],
-        prompt=row["prompt"],
-        result=row["result"],
-        actor=row["actor"],
-        timestamp=row["timestamp"],
-        source=row["source"],
-        metadata=json.loads(row["metadata"]),
-    )
-
-
-def list_chapters(conn: sqlite3.Connection) -> list[Chapter]:
-    rows = conn.execute("SELECT * FROM chapters ORDER BY timestamp DESC").fetchall()
-    return [
-        Chapter(
-            id=r["id"],
-            prompt=r["prompt"],
-            result=r["result"],
-            actor=r["actor"],
-            timestamp=r["timestamp"],
-            source=r["source"],
-            metadata=json.loads(r["metadata"]),
-        )
-        for r in rows
-    ]
-
-
-# --- Book operations ---
-
-def save_book(book: Book, conn: sqlite3.Connection):
-    conn.execute(
-        """INSERT INTO books (id, title, chapter_ids, version, feature, created_at, parent_book_id, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            book.id,
-            book.title,
-            json.dumps(book.chapter_ids),
-            book.version,
-            book.feature,
-            book.created_at,
-            book.parent_book_id,
-            json.dumps(book.metadata),
-        ),
-    )
+def save_chapter(chapter, conn):
+    conn.execute("INSERT INTO chapters (id, prompt, result, actor, timestamp, source) VALUES (?, ?, ?, ?, ?, ?)",
+        (chapter.id, chapter.prompt, chapter.result, chapter.actor, chapter.timestamp, chapter.source))
     conn.commit()
 
+def get_chapter(chapter_id, conn):
+    row = conn.execute("SELECT * FROM chapters WHERE id = ?", (chapter_id,)).fetchone()
+    if row is None: return None
+    return Chapter(id=row["id"], prompt=row["prompt"], result=row["result"], actor=row["actor"], timestamp=row["timestamp"], source=row["source"])
 
-def get_book(book_id: str, conn: sqlite3.Connection) -> Optional[Book]:
-    row = conn.execute(
-        "SELECT * FROM books WHERE id = ?", (book_id,)
-    ).fetchone()
-    if row is None:
-        return None
-    return Book(
-        id=row["id"],
-        title=row["title"],
-        chapter_ids=json.loads(row["chapter_ids"]),
-        version=row["version"],
-        feature=row["feature"],
-        created_at=row["created_at"],
-        parent_book_id=row["parent_book_id"],
-        metadata=json.loads(row["metadata"]),
-    )
-
-
-def list_books(conn: sqlite3.Connection) -> list[Book]:
-    rows = conn.execute("SELECT * FROM books ORDER BY created_at").fetchall()
-    return [
-        Book(
-            id=r["id"],
-            title=r["title"],
-            chapter_ids=json.loads(r["chapter_ids"]),
-            version=r["version"],
-            feature=r["feature"],
-            created_at=r["created_at"],
-            parent_book_id=r["parent_book_id"],
-            metadata=json.loads(r["metadata"]),
-        )
-        for r in rows
-    ]
+def list_chapters(conn):
+    return [Chapter(id=r["id"], prompt=r["prompt"], result=r["result"], actor=r["actor"], timestamp=r["timestamp"], source=r["source"])
+            for r in conn.execute("SELECT * FROM chapters ORDER BY timestamp DESC").fetchall()]

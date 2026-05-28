@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from models import Chapter, Book
-from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
+from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books, search_chapters_fts
 
 app = FastAPI(
     title="AI Audit API",
@@ -92,17 +92,14 @@ def api_search_chapters(
     before: Optional[str] = None,
     conn=Depends(get_db),
 ):
-    """Search chapters by actor, keyword, or date range."""
-    results = list_chapters(conn)
-    if actor:
-        results = [ch for ch in results if ch.actor.lower() == actor.lower()]
-    if keyword:
-        kw = keyword.lower()
-        results = [ch for ch in results if kw in ch.prompt.lower() or kw in ch.result.lower()]
-    if after:
-        results = [ch for ch in results if ch.timestamp >= after]
-    if before:
-        results = [ch for ch in results if ch.timestamp <= before]
+    """Search chapters index-matched via SQLite FTS5 engine ordered by relevance ranking."""
+    results = search_chapters_fts(
+        conn=conn,
+        keyword=keyword,
+        actor=actor,
+        after=after,
+        before=before
+    )
     return [ch.to_dict() for ch in results]
 
 
@@ -220,7 +217,7 @@ def api_diff_books(
     id_b: str = Query(..., description="Second book ID"),
     conn=Depends(get_db),
 ):
-    """Compare two books — shows added, removed, and kept chapters."""
+    """Compare two books – shows added, removed, and kept chapters."""
     book_a = get_book(id_a, conn)
     book_b = get_book(id_b, conn)
     if book_a is None:
