@@ -498,7 +498,7 @@ import { streamText } from "ai";
 const AUDIT_API = process.env.AUDIT_API_URL ?? "http://localhost:8000";
 const AUDIT_API_KEY = process.env.AUDIT_API_KEY ?? "";
 
-async function logChapter(prompt: any, result: string): Promise<void> {
+async function logChapter(prompt: unknown, result: string): Promise<void> {
   try {
     const promptString = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
 
@@ -506,7 +506,7 @@ async function logChapter(prompt: any, result: string): Promise<void> {
       prompt: `[Vercel AISDK] ${promptString}`.slice(0, 2000),
       result: result.slice(0, 2000),
       actor: "vercel-ai-sdk",
-      source: "nextjs",
+      source: "vercel-ai",
     }), {
       method: "POST",
       headers: {
