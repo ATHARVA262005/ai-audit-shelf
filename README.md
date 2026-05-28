@@ -481,7 +481,7 @@ query_engine = index.as_query_engine()
 response = query_engine.query("What are the key findings in Q1?")
 print(response)
 
-# 4. Bundle all logged chapters into a book
+# 4. Bundle all logged chapters into a book 
 book = handler.bundle("Q1 RAG Query", feature="RAG Automation")
 print(f"Audited successfully! Book created: {book.get('id')}")
 ```
