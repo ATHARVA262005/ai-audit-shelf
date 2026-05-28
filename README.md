@@ -481,11 +481,62 @@ query_engine = index.as_query_engine()
 response = query_engine.query("What are the key findings in Q1?")
 print(response)
 
-# 4. Bundle all logged chapters into a book 
+# 4. Bundle all logged chapters into a book
 book = handler.bundle("Q1 RAG Query", feature="RAG Automation")
 print(f"Audited successfully! Book created: {book.get('id')}")
 ```
 
+---
+
+### Vercel AI SDK — Next.js API Route 
+
+```typescript
+// app/api/chat/route.ts
+import { openai } from "@ai-sdk/openai";
+import { streamText } from "ai";
+
+const AUDIT_API = process.env.AUDIT_API_URL ?? "http://localhost:8000";
+const AUDIT_API_KEY = process.env.AUDIT_API_KEY ?? "";
+
+async function logChapter(prompt: any, result: string): Promise<void> {
+  try {
+    const promptString = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+
+    await fetch(`${AUDIT_API}/chapter?` + new URLSearchParams({
+      prompt: `[Vercel AISDK] ${promptString}`.slice(0, 2000),
+      result: result.slice(0, 2000),
+      actor: "vercel-ai-sdk",
+      source: "nextjs",
+    }), {
+      method: "POST",
+      headers: {
+        ...(AUDIT_API_KEY ? { "X-API-Key": AUDIT_API_KEY } : {}),
+      },
+      keepalive: true, 
+    });
+  } catch (err) {
+    console.error("Failed to log chapter to AI Audit server:", err);
+  }
+}
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find((m: { role: string }) => m.role === "user")?.content ?? "";
+
+  const result = streamText({
+    model: openai("gpt-4o"),
+    messages,
+    onFinish: async ({ text }) => {
+      await logChapter(lastUserMessage, text);
+    },
+  });
+
+  return result.toDataStreamResponse();
+}
+```
 ---
 
 ### Shell Script
