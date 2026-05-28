@@ -329,6 +329,165 @@ run_with_audit("What's the weather in Tokyo?")
 
 ---
 
+### LlamaIndex — Callback Handler
+
+```python
+import requests
+from typing import Optional, Dict, List, Any
+from llama_index.core.callbacks import CallbackManager, CBEventType
+from llama_index.core.callbacks.base_handler import BaseCallbackHandler
+from llama_index.core.callbacks.schema import EventPayload  # Requires llama-index-core >= 0.10
+
+API = "http://localhost:8000"
+
+
+class AuditCallbackHandler(BaseCallbackHandler):
+    """Logs LlamaIndex query and LLM synthesis events to the AI Audit server."""
+
+    def __init__(self, actor: str = "llamaindex-agent"):
+        # Ignore background noise (chunking, tokenization, embedding) — track only QUERY and LLM
+        all_events = list(CBEventType)
+        all_events.remove(CBEventType.QUERY)
+        all_events.remove(CBEventType.LLM)
+
+        super().__init__(
+            event_starts_to_ignore=all_events,
+            event_ends_to_ignore=all_events,
+        )
+        self.actor = actor
+        self._chapters: List[str] = []
+        self._event_prompts: Dict[str, str] = {}
+
+    def on_event_start(
+        self,
+        event_type: CBEventType,
+        payload: Optional[Dict[str, Any]] = None,
+        event_id: str = "",
+        **kwargs,
+    ) -> str:
+        if not payload:
+            return event_id
+
+        if event_type == CBEventType.QUERY:
+            self._event_prompts[event_id] = payload.get(EventPayload.QUERY_STR, "")
+        elif event_type == CBEventType.LLM:
+            messages = payload.get(EventPayload.MESSAGES, [])
+            prompt = payload.get(EventPayload.PROMPT, "")
+            # Handle both chat message lists and raw prompt strings
+            self._event_prompts[event_id] = str(messages[0]) if messages else str(prompt)
+
+        return event_id
+
+    def on_event_end(
+        self,
+        event_type: CBEventType,
+        payload: Optional[Dict[str, Any]] = None,
+        event_id: str = "",
+        **kwargs,
+    ) -> None:
+        if not payload:
+            return
+
+        prompt = self._event_prompts.pop(event_id, "")
+        result = ""
+
+        if event_type == CBEventType.QUERY:
+            response = payload.get(EventPayload.RESPONSE)
+            result = str(response) if response else ""
+
+        elif event_type == CBEventType.LLM:
+            response = payload.get(EventPayload.RESPONSE)
+            if response:
+                # Handle both ChatResponse (.message.content) and CompletionResponse (.text)
+                if hasattr(response, "message") and response.message:
+                    result = response.message.content
+                elif hasattr(response, "text"):
+                    result = response.text
+                else:
+                    result = str(response)
+
+        if prompt or result:
+            chapter_id = self._log(prompt=prompt, result=result, event_type=event_type.value)
+            if chapter_id:
+                self._chapters.append(chapter_id)
+
+    def _log(self, prompt: str, result: str, event_type: str = "") -> Optional[str]:
+        try:
+            resp = requests.post(
+                f"{API}/chapter",
+                params={
+                    "prompt": f"[{event_type}] {prompt}"[:2000],
+                    "result": result[:2000],
+                    "actor": self.actor,
+                    "source": "llamaindex",
+                },
+                timeout=5,
+            )
+            resp.raise_for_status()
+            return resp.json()["chapter"]["id"]
+        except Exception as e:
+            print(f"Failed to log event to AI Audit server: {e}")
+            return None
+
+    def bundle(self, title: str, feature: str = "") -> dict:
+        """Bundle all logged chapters into a book and clear tracking state."""
+        if not self._chapters:
+            return {"message": "No chapters logged to bundle."}
+
+        try:
+            resp = requests.post(
+                f"{API}/book",
+                params={
+                    "title": title,
+                    "feature": feature or title,
+                },
+                json=self._chapters,
+                timeout=5,
+            )
+            resp.raise_for_status()
+            book = resp.json()["book"]
+            # Clear state only after a successful bundle
+            self._chapters = []
+            self._event_prompts = {}
+            return book
+        except Exception as e:
+            print(f"Failed to bundle chapters: {e}")
+            return {}
+
+    def start_trace(self, trace_id: Optional[str] = None) -> None:
+        pass
+
+    def end_trace(
+        self,
+        trace_id: Optional[str] = None,
+        trace_map: Optional[Dict[str, List[str]]] = None,
+    ) -> None:
+        pass
+
+
+# Usage Example
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+
+# 1. Initialize the handler — indexing noise is filtered out automatically
+handler = AuditCallbackHandler(actor="rag-pipeline")
+Settings.callback_manager = CallbackManager([handler])
+
+# 2. Build the index and query engine (chunking/embedding events are ignored)
+documents = SimpleDirectoryReader("./docs").load_data()
+index = VectorStoreIndex.from_documents(documents)
+query_engine = index.as_query_engine()
+
+# 3. Execute queries — handler fires only for QUERY and LLM events
+response = query_engine.query("What are the key findings in Q1?")
+print(response)
+
+# 4. Bundle all logged chapters into a book 
+book = handler.bundle("Q1 RAG Query", feature="RAG Automation")
+print(f"Audited successfully! Book created: {book.get('id')}")
+```
+
+---
+
 ### Shell Script
 
 ```bash
