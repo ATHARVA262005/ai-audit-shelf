@@ -11,7 +11,12 @@ Repository: [github.com/ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA
 > ⭐️ **If you find this project useful, please consider giving it a star!**  
 > [ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA262005/ai-audit-shelf)
 
+[![Stars](https://img.shields.io/github/stars/ATHARVA262005/ai-audit-shelf?style=flat&color=yellow)](https://github.com/ATHARVA262005/ai-audit-shelf/stargazers)
+[![Forks](https://img.shields.io/github/forks/ATHARVA262005/ai-audit-shelf?style=flat)](https://github.com/ATHARVA262005/ai-audit-shelf/network/members)
 [![Issues](https://img.shields.io/github/issues/ATHARVA262005/ai-audit-shelf.svg)](https://github.com/ATHARVA262005/ai-audit-shelf/issues)
+[![Contributors](https://img.shields.io/github/contributors/ATHARVA262005/ai-audit-shelf?color=blue)](https://github.com/ATHARVA262005/ai-audit-shelf/graphs/contributors)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![GSSoC 2026](https://img.shields.io/badge/GSSoC-2026-orange)](https://gssoc.girlscript.tech/)
 
 ```
 Library
@@ -582,24 +587,52 @@ Full interactive docs at `http://localhost:8000/docs` when the server is running
 
 ---
 
+## Contributors
+
+Thanks to everyone who has contributed to this project! 🎉
+
+[![Contributors](https://contrib.rocks/image?repo=ATHARVA262005/ai-audit-shelf)](https://github.com/ATHARVA262005/ai-audit-shelf/graphs/contributors)
+
+---
+
 ## Contributing
 
-Contributions, bug reports, ideas, and feature requests are welcome!
+All contributions are welcome — from fixing a typo to adding a full integration recipe.
 
-- [Open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) to report bugs or suggest new features.
-- Make a pull request for fixes or improvements.
-- Star the repo if you like it!
+### Ways to contribute
 
-If you have questions, open a discussion or contact [@ATHARVA262005](https://github.com/ATHARVA262005).
+| Type | How |
+|---|---|
+| 🐛 Bug fix | Open an issue, then a PR |
+| 📖 Docs / Recipe | Add an integration example to the README |
+| ✨ Feature | Open an issue first to discuss |
+| ⭐ No code? | Star the repo — it helps more people find it |
 
-For larger contributions, please [open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) first to discuss your idea.
+### Good first issues
 
+Looking for a place to start? Check the [`good first issue`](https://github.com/ATHARVA262005/ai-audit-shelf/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) label — these are small, well-defined tasks perfect for first-time contributors.
+
+### How to submit a PR
+
+```bash
+# 1. Fork the repo and clone your fork
+git clone https://github.com/<your-username>/ai-audit-shelf
+cd ai-audit-shelf
+
+# 2. Create a branch
+git checkout -b feat/your-feature-name
+
+# 3. Make your changes and commit
+git commit -m "feat: describe your change"
+
+# 4. Push and open a PR against main
+git push origin feat/your-feature-name
 ```
-```
+
+For questions, open a [discussion](https://github.com/ATHARVA262005/ai-audit-shelf/discussions) or reach out to [@ATHARVA262005](https://github.com/ATHARVA262005).
+
+---
 
 ## License
 
 MIT — see [LICENSE](LICENSE)
-
-```
-
