@@ -1,4 +1,4 @@
-﻿"""FastAPI server for the AI Audit system."""
+"""FastAPI server for the AI Audit system."""
 
 import json
 import os
@@ -91,6 +91,11 @@ async def api_add_chapter(
     result: str,
     actor: str = "anonymous",
     source: str = "manual",
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    seed: Optional[int] = None,
+    validation_status: Optional[str] = None,
+    validation_message: Optional[str] = None,
     conn=Depends(get_db),
 ):
     """Log a new chapter (atomic AI action). Restricted to Agents and Admins."""
@@ -102,6 +107,11 @@ async def api_add_chapter(
         actor=actor,
         timestamp=datetime.now(timezone.utc).isoformat(),
         source=source,
+        model=model,
+        temperature=temperature,
+        seed=seed,
+        validation_status=validation_status,
+        validation_message=validation_message,
     )
     save_chapter(chapter, conn)
 
@@ -111,15 +121,70 @@ async def api_add_chapter(
     return {"status": "created", "chapter": chapter_dict}
 
 
+@app.post("/chapter/{chapter_id}/validate", response_model=dict, dependencies=[Depends(RoleChecker(["agent"]))])
+def api_validate_chapter(
+    chapter_id: str,
+    required_keywords: Optional[list[str]] = Query(None),
+    regex_pattern: Optional[str] = None,
+    json_format: bool = False,
+    conn=Depends(get_db),
+):
+    """Run a validation gate check on a logged chapter's output."""
+    chapter = get_chapter(chapter_id, conn)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter '{chapter_id}' not found")
+
+    import re
+    passed = True
+    reasons = []
+
+    if regex_pattern:
+        try:
+            if not re.search(regex_pattern, chapter.result):
+                passed = False
+                reasons.append(f"Result did not match regex pattern '{regex_pattern}'")
+        except re.error as e:
+            raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {e}")
+
+    if required_keywords:
+        missing = [kw for kw in required_keywords if kw.lower() not in chapter.result.lower()]
+        if missing:
+            passed = False
+            reasons.append(f"Missing required keywords: {', '.join(missing)}")
+
+    if json_format:
+        try:
+            json.loads(chapter.result)
+        except json.JSONDecodeError:
+            passed = False
+            reasons.append("Result is not a valid JSON document")
+
+    chapter.validation_status = "passed" if passed else "failed"
+    chapter.validation_message = "Validation passed." if passed else " | ".join(reasons)
+
+    conn.execute(
+        "UPDATE chapters SET validation_status = ?, validation_message = ? WHERE id = ?",
+        (chapter.validation_status, chapter.validation_message, chapter.id),
+    )
+    conn.commit()
+
+    return {
+        "chapter_id": chapter_id,
+        "validation_status": chapter.validation_status,
+        "validation_message": chapter.validation_message,
+        "chapter": chapter.to_dict(),
+    }
+
+
 @app.get("/chapters", response_model=list[dict], dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_list_chapters(conn=Depends(get_db)):
     """List all chapters. Restricted to Auditors and Admins."""
     return [ch.to_dict() for ch in list_chapters(conn)]
 
 
-@app.get("/chapter/{chapter_id}", response_model=dict, dependencies=[Depends(RoleChecker(["auditor"]))])
+@app.get("/chapter/{chapter_id}", response_model=dict, dependencies=[Depends(RoleChecker(["auditor", "agent"]))])
 def api_get_chapter(chapter_id: str, conn=Depends(get_db)):
-    """Get a single chapter by ID. Restricted to Auditors and Admins."""
+    """Get a single chapter by ID. Restricted to Agents, Auditors and Admins."""
     ch = get_chapter(chapter_id, conn)
     if ch is None:
         raise HTTPException(status_code=404, detail=f"Chapter '{chapter_id}' not found")
@@ -178,15 +243,15 @@ async def api_create_book(
     return {"status": "created", "book": book_dict}
 
 
-@app.get("/books", response_model=list[dict], dependencies=[Depends(RoleChecker(["auditor"]))])
+@app.get("/books", response_model=list[dict], dependencies=[Depends(RoleChecker(["auditor", "agent"]))])
 def api_list_books(conn=Depends(get_db)):
-    """List all books. Restricted to Auditors and Admins."""
+    """List all books. Restricted to Agents, Auditors and Admins."""
     return [b.to_dict() for b in list_books(conn)]
 
 
-@app.get("/book/{book_id}", response_model=dict, dependencies=[Depends(RoleChecker(["auditor"]))])
+@app.get("/book/{book_id}", response_model=dict, dependencies=[Depends(RoleChecker(["auditor", "agent"]))])
 def api_get_book(book_id: str, conn=Depends(get_db)):
-    """Get a single book by ID. Restricted to Auditors and Admins."""
+    """Get a single book by ID. Restricted to Agents, Auditors and Admins."""
     b = get_book(book_id, conn)
     if b is None:
         raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found")
@@ -257,6 +322,15 @@ def api_export_book(
         lines.append(f"\n**Actor:** {ch.actor}  ")
         lines.append(f"**Source:** {ch.source}  ")
         lines.append(f"**Timestamp:** {ch.timestamp}  ")
+        if ch.model:
+            lines.append(f"**Model:** `{ch.model}`  ")
+        if ch.temperature is not None:
+            lines.append(f"**Temperature:** {ch.temperature}  ")
+        if ch.seed is not None:
+            lines.append(f"**Seed:** {ch.seed}  ")
+        if ch.validation_status:
+            icon = "✅" if ch.validation_status == "passed" else "❌"
+            lines.append(f"**Validation:** {icon} {ch.validation_status.upper()} ({ch.validation_message})  ")
         lines.append(f"\n### Prompt\n\n> {ch.prompt}\n")
         lines.append(f"### Result\n\n{ch.result}\n")
         lines.append("---\n")

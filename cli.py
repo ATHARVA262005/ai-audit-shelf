@@ -21,10 +21,14 @@ def cmd_add_chapter(args):
         actor=args.actor or "anonymous",
         timestamp=datetime.now(timezone.utc).isoformat(),
         source=args.source or "manual",
+        model=args.model,
+        temperature=args.temperature,
+        seed=args.seed,
     )
     save_chapter(chapter, conn)
     conn.close()
     print(f"Chapter {chapter_id} logged.")
+
 
 
 def cmd_list_chapters(args):
@@ -56,10 +60,21 @@ def cmd_show_chapter(args):
     print(f"Actor:   {chapter.actor}")
     print(f"Source:  {chapter.source}")
     print(f"Time:    {chapter.timestamp}")
+    if chapter.model:
+        print(f"Model:   {chapter.model}")
+    if chapter.temperature is not None:
+        print(f"Temp:    {chapter.temperature}")
+    if chapter.seed is not None:
+        print(f"Seed:    {chapter.seed}")
+    if chapter.validation_status:
+        status_label = f"[{chapter.validation_status.upper()}]"
+        print(f"Gate:    {status_label} - {chapter.validation_message}")
     print(f"\nPrompt:\n  {chapter.prompt}")
     print(f"\nResult:\n  {chapter.result}")
     if chapter.metadata:
         print(f"\nMetadata: {chapter.metadata}")
+
+
 
 
 def cmd_create_book(args):
@@ -330,7 +345,11 @@ def main():
     p.add_argument("result", help="The output/result")
     p.add_argument("--actor", help="Who triggered this action")
     p.add_argument("--source", help="Source system (e.g., claude, copilot, manual)")
+    p.add_argument("--model", help="Model name or version (e.g. gpt-4o)")
+    p.add_argument("--temperature", type=float, help="Generation temperature (e.g. 0.7)")
+    p.add_argument("--seed", type=int, help="Generation random seed")
     p.set_defaults(func=cmd_add_chapter)
+
 
     # list-chapters
     p = sub.add_parser("list-chapters", help="List all chapters")

@@ -47,6 +47,14 @@ If you have an idea for a new feature or an improvement, we'd love to hear it! P
 5. **Commit** your changes with a descriptive commit message (`git commit -m "Add cool feature X"`).
 6. **Push** to your fork (`git push origin feature/my-awesome-feature`).
 7. **Open a Pull Request** against the `main` branch. Fill out the Pull Request template provided.
+8. **Sign the CLA**: When you open your first Pull Request, our CLA Assistant bot will ask you to sign our Contributor License Agreement (CLA). This takes 10 seconds via GitHub sign-in and helps keep the project legally safe and commercially flexible for the long term.
+
+## Contributor License Agreement (CLA)
+
+We keep AI Audit Shelf fully MIT-licensed so it is completely open and free for the community. To ensure we can protect the codebase, keep the project sustainable, and adapt to future distribution needs (like commercial hosting, SaaS options, or potential relicensing), we require all code contributors to sign a standard CLA. 
+
+You retain the copyright and ownership of your original code, but you grant the project owner a license to use and distribute it. This is standard practice for open-source projects backed by independent creators or companies.
+
 
 ## Local Development Setup
 
