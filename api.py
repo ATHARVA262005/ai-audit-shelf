@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from models import Chapter, Book
-from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
+from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books, get_stats
 
 app = FastAPI(
     title="AI Audit API",
@@ -252,6 +252,12 @@ def api_shelf(conn=Depends(get_db)):
     for b in books:
         features.setdefault(b.feature, []).append(b.to_dict())
     return features
+
+
+@app.get("/stats")
+def api_stats(conn=Depends(get_db)):
+    """Return summary statistics about the audit database."""
+    return get_stats(conn)
 
 
 @app.get("/health")

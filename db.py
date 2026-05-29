@@ -163,6 +163,33 @@ def get_book(book_id: str, conn: sqlite3.Connection) -> Optional[Book]:
     )
 
 
+def get_stats(conn: sqlite3.Connection) -> dict:
+    """Return summary statistics about the audit database."""
+    chapters_count = conn.execute("SELECT COUNT(*) FROM chapters").fetchone()[0]
+    books_count = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
+    features_count = conn.execute(
+        "SELECT COUNT(DISTINCT feature) FROM books"
+    ).fetchone()[0]
+    actors = [
+        row["actor"]
+        for row in conn.execute("SELECT DISTINCT actor FROM chapters ORDER BY actor").fetchall()
+    ]
+    latest_chapter = conn.execute(
+        "SELECT MAX(timestamp) FROM chapters"
+    ).fetchone()[0]
+    latest_book = conn.execute(
+        "SELECT MAX(created_at) FROM books"
+    ).fetchone()[0]
+    return {
+        "total_chapters": chapters_count,
+        "total_books": books_count,
+        "total_features": features_count,
+        "actors": actors,
+        "latest_chapter_at": latest_chapter,
+        "latest_book_at": latest_book,
+    }
+
+
 def list_books(conn: sqlite3.Connection) -> list[Book]:
     rows = conn.execute("SELECT * FROM books ORDER BY created_at").fetchall()
     return [

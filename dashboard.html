@@ -345,6 +345,7 @@ function getApiUrl() {
 const API = getApiUrl();
 let booksData = [];
 let chaptersData = [];
+let statsData = {};
 
 async function fetchJSON(url) {
   const r = await fetch(url);
@@ -365,9 +366,10 @@ async function fetchJSON(url) {
 })();
 
 async function loadAll() {
-  [booksData, chaptersData] = await Promise.all([
+  [booksData, chaptersData, statsData] = await Promise.all([
     fetchJSON(`${API}/books`),
     fetchJSON(`${API}/chapters`),
+    fetchJSON(`${API}/stats`),
   ]);
 }
 
@@ -379,12 +381,16 @@ function renderShelf() {
     (features[b.feature] = features[b.feature] || []).push(b);
   });
 
+  const chapters = statsData.total_chapters ?? chaptersData.length;
+  const books = statsData.total_books ?? booksData.length;
+  const featureCount = statsData.total_features ?? Object.keys(features).length;
+
   let html = `
     <div class="page-header"><h2>Library</h2><p>Browse all features organized as a bookshelf</p></div>
     <div class="stats">
-      <div class="stat-card"><div class="label">Books</div><div class="value">${booksData.length}</div></div>
-      <div class="stat-card"><div class="label">Chapters</div><div class="value">${chaptersData.length}</div></div>
-      <div class="stat-card"><div class="label">Features</div><div class="value">${Object.keys(features).length}</div></div>
+      <div class="stat-card"><div class="label">Books</div><div class="value">${books}</div></div>
+      <div class="stat-card"><div class="label">Chapters</div><div class="value">${chapters}</div></div>
+      <div class="stat-card"><div class="label">Features</div><div class="value">${featureCount}</div></div>
     </div>`;
 
   for (const [feature, books] of Object.entries(features)) {
