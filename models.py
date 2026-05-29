@@ -16,7 +16,10 @@ class Chapter:
     model: Optional[str] = None
     temperature: Optional[float] = None
     seed: Optional[int] = None
+    validation_status: Optional[str] = None  # e.g., "passed", "failed", "skipped"
+    validation_message: Optional[str] = None  # details of validation rule run
     metadata: dict = field(default_factory=dict)
+
 
 
     def to_dict(self):

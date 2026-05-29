@@ -337,3 +337,78 @@ def test_api_diff_books():
     assert len(diff_data["added"]) == 1
     assert diff_data["added"][0]["id"] == "c_002"
     assert len(diff_data["removed"]) == 0
+
+
+
+def test_api_validation_gates():
+    """Test Validation Gates endpoints, regexes, keywords, and JSON format checks."""
+    # 1. Test posting a chapter with custom validation details loaded initially
+    response = client.post(
+        "/chapter",
+        params={
+            "prompt": "Say hello",
+            "result": "Hello world",
+            "validation_status": "passed",
+            "validation_message": "Pre-validated"
+        }
+    )
+    assert response.status_code == 200
+    assert response.json()["chapter"]["validation_status"] == "passed"
+    assert response.json()["chapter"]["validation_message"] == "Pre-validated"
+
+    # 2. Test dynamic validation gate - Successful Regex and Keyword check
+    response = client.post(
+        "/chapter/c_001/validate",
+        params={
+            "required_keywords": ["hello", "world"],
+            "regex_pattern": "^Hello"
+        }
+    )
+    assert response.status_code == 200
+    res = response.json()
+    assert res["validation_status"] == "passed"
+    assert res["validation_message"] == "Validation passed."
+
+    # 3. Test dynamic validation gate - Failing keyword check
+    response = client.post(
+        "/chapter/c_001/validate",
+        params={
+            "required_keywords": ["hello", "mars"]
+        }
+    )
+    assert response.status_code == 200
+    res = response.json()
+    assert res["validation_status"] == "failed"
+    assert "mars" in res["validation_message"]
+
+    # 4. Test dynamic validation gate - Successful JSON format check
+    client.post(
+        "/chapter",
+        params={
+            "prompt": "Get details as json",
+            "result": '{"status": "complete", "score": 95}'
+        }
+    )
+    response = client.post(
+        "/chapter/c_002/validate",
+        params={"json_format": True}
+    )
+    assert response.status_code == 200
+    assert response.json()["validation_status"] == "passed"
+
+    # 5. Test dynamic validation gate - Failing JSON format check
+    client.post(
+        "/chapter",
+        params={
+            "prompt": "Get details as faulty json",
+            "result": "{bad_json: complete}"
+        }
+    )
+    response = client.post(
+        "/chapter/c_003/validate",
+        params={"json_format": True}
+    )
+    assert response.status_code == 200
+    assert response.json()["validation_status"] == "failed"
+    assert "not a valid JSON document" in response.json()["validation_message"]
+

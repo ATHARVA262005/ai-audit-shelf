@@ -66,10 +66,14 @@ def cmd_show_chapter(args):
         print(f"Temp:    {chapter.temperature}")
     if chapter.seed is not None:
         print(f"Seed:    {chapter.seed}")
+    if chapter.validation_status:
+        status_label = f"[{chapter.validation_status.upper()}]"
+        print(f"Gate:    {status_label} - {chapter.validation_message}")
     print(f"\nPrompt:\n  {chapter.prompt}")
     print(f"\nResult:\n  {chapter.result}")
     if chapter.metadata:
         print(f"\nMetadata: {chapter.metadata}")
+
 
 
 
