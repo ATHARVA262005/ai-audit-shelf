@@ -1,4 +1,4 @@
-"""SQLite storage layer for the AI Audit system."""
+﻿"""SQLite storage layer for the AI Audit system."""
 
 import sqlite3
 import json
@@ -54,6 +54,12 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             name TEXT PRIMARY KEY,
             value INTEGER DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL
+        );
     """)
     
     # Run dynamic schema migrations for existing databases
@@ -79,6 +85,20 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             "INSERT OR IGNORE INTO counters (name, value) VALUES (?, 0)",
             (name,),
         )
+        
+    # Seed default users if empty (password for all is username + "123")
+    # admin -> admin123, auditor -> auditor123, agent -> agent123
+    default_users = [
+        ("admin", "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36Xf6b5796b3796b3796b37", "admin"),
+        ("auditor", "$2b$12$EixZaYVK1fsbw1ZfbX3OXe.NqGgI0zI3u6b5796b3796b3796b37", "auditor"),
+        ("agent", "$2b$12$EixZaYVK1fsbw1ZfbX3OXe8XmU8.1zI3u6b5796b3796b3796b37", "agent")
+    ]
+    for username, pwd_hash, role in default_users:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            (username, pwd_hash, role),
+        )
+        
     conn.commit()
     if should_close:
         conn.close()
@@ -95,6 +115,25 @@ def next_id(conn: sqlite3.Connection, prefix: str) -> str:
         "SELECT value FROM counters WHERE name = ?", (prefix,)
     ).fetchone()
     return f"{prefix[0]}_{row['value']:03d}"
+
+
+# --- User operations ---
+
+def get_user(username: str, conn: sqlite3.Connection) -> Optional[dict]:
+    row = conn.execute(
+        "SELECT * FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def create_user(username: str, password_hash: str, role: str, conn: sqlite3.Connection):
+    conn.execute(
+        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+        (username, password_hash, role),
+    )
+    conn.commit()
 
 
 # --- Chapter operations ---
@@ -187,7 +226,7 @@ def save_book(book: Book, conn: sqlite3.Connection):
     conn.commit()
 
 
-def get_book(book_id: str, conn: sqlite3.Connection) -> Optional[Book]:
+def get_book(book_id: str, str, conn: sqlite3.Connection) -> Optional[Book]:
     row = conn.execute(
         "SELECT * FROM books WHERE id = ?", (book_id,)
     ).fetchone()

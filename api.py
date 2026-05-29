@@ -3,14 +3,16 @@
 import json
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import FastAPI, HTTPException, Query, Depends, Header
+from fastapi import FastAPI, HTTPException, Query, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi.security import OAuth2PasswordRequestForm
 
 from models import Chapter, Book
-from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
+from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books, get_user
+from auth import RoleChecker, create_access_token, verify_password
 
 app = FastAPI(
     title="AI Audit API",
@@ -26,13 +28,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = os.environ.get("AUDIT_API_KEY", "")
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
 
 
-def verify_api_key(x_api_key: Optional[str] = Header(None)):
-    """Simple API key auth. Set AUDIT_API_KEY env var to enable."""
-    if API_KEY and x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+@app.websocket("/ws/events")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 
 def get_db():
@@ -45,10 +70,23 @@ def get_db():
         conn.close()
 
 
+# --- Authentication Endpoint ---
+
+@app.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), conn=Depends(get_db)):
+    """Authenticate user and return access JWT token."""
+    user = get_user(form_data.username, conn)
+    if not user or not verify_password(form_data.password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    
+    access_token = create_access_token(data={"sub": user["username"], "role": user["role"]})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 # --- Chapters ---
 
-@app.post("/chapter", response_model=dict, dependencies=[Depends(verify_api_key)])
-def api_add_chapter(
+@app.post("/chapter", response_model=dict, dependencies=[Depends(RoleChecker(["agent"]))])
+async def api_add_chapter(
     prompt: str,
     result: str,
     actor: str = "anonymous",
@@ -60,7 +98,7 @@ def api_add_chapter(
     validation_message: Optional[str] = None,
     conn=Depends(get_db),
 ):
-    """Log a new chapter (atomic AI action)."""
+    """Log a new chapter (atomic AI action). Restricted to Agents and Admins."""
     chapter_id = next_id(conn, "chapter")
     chapter = Chapter(
         id=chapter_id,
@@ -76,10 +114,14 @@ def api_add_chapter(
         validation_message=validation_message,
     )
     save_chapter(chapter, conn)
-    return {"status": "created", "chapter": chapter.to_dict()}
+
+    chapter_dict = chapter.to_dict()
+    await manager.broadcast({"type": "NEW_CHAPTER", "data": chapter_dict})
+
+    return {"status": "created", "chapter": chapter_dict}
 
 
-@app.post("/chapter/{chapter_id}/validate", response_model=dict, dependencies=[Depends(verify_api_key)])
+@app.post("/chapter/{chapter_id}/validate", response_model=dict, dependencies=[Depends(RoleChecker(["agent"]))])
 def api_validate_chapter(
     chapter_id: str,
     required_keywords: Optional[list[str]] = Query(None),
@@ -96,7 +138,6 @@ def api_validate_chapter(
     passed = True
     reasons = []
 
-    # 1. Regex check
     if regex_pattern:
         try:
             if not re.search(regex_pattern, chapter.result):
@@ -105,14 +146,12 @@ def api_validate_chapter(
         except re.error as e:
             raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {e}")
 
-    # 2. Keywords check
     if required_keywords:
         missing = [kw for kw in required_keywords if kw.lower() not in chapter.result.lower()]
         if missing:
             passed = False
             reasons.append(f"Missing required keywords: {', '.join(missing)}")
 
-    # 3. JSON format check
     if json_format:
         try:
             json.loads(chapter.result)
@@ -120,11 +159,9 @@ def api_validate_chapter(
             passed = False
             reasons.append("Result is not a valid JSON document")
 
-    # Update chapter status in DB
     chapter.validation_status = "passed" if passed else "failed"
     chapter.validation_message = "Validation passed." if passed else " | ".join(reasons)
 
-    # Perform SQL UPDATE
     conn.execute(
         "UPDATE chapters SET validation_status = ?, validation_message = ? WHERE id = ?",
         (chapter.validation_status, chapter.validation_message, chapter.id),
@@ -139,24 +176,22 @@ def api_validate_chapter(
     }
 
 
-
-
-@app.get("/chapters", response_model=list[dict])
+@app.get("/chapters", response_model=list[dict], dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_list_chapters(conn=Depends(get_db)):
-    """List all chapters."""
+    """List all chapters. Restricted to Auditors and Admins."""
     return [ch.to_dict() for ch in list_chapters(conn)]
 
 
-@app.get("/chapter/{chapter_id}", response_model=dict)
+@app.get("/chapter/{chapter_id}", response_model=dict, dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_get_chapter(chapter_id: str, conn=Depends(get_db)):
-    """Get a single chapter by ID."""
+    """Get a single chapter by ID. Restricted to Auditors and Admins."""
     ch = get_chapter(chapter_id, conn)
     if ch is None:
         raise HTTPException(status_code=404, detail=f"Chapter '{chapter_id}' not found")
     return ch.to_dict()
 
 
-@app.get("/search/chapters", response_model=list[dict])
+@app.get("/search/chapters", response_model=list[dict], dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_search_chapters(
     actor: Optional[str] = None,
     keyword: Optional[str] = None,
@@ -164,7 +199,7 @@ def api_search_chapters(
     before: Optional[str] = None,
     conn=Depends(get_db),
 ):
-    """Search chapters by actor, keyword, or date range."""
+    """Search chapters by actor, keyword, or date range. Restricted to Auditors and Admins."""
     results = list_chapters(conn)
     if actor:
         results = [ch for ch in results if ch.actor.lower() == actor.lower()]
@@ -180,14 +215,14 @@ def api_search_chapters(
 
 # --- Books ---
 
-@app.post("/book", response_model=dict, dependencies=[Depends(verify_api_key)])
-def api_create_book(
+@app.post("/book", response_model=dict, dependencies=[Depends(RoleChecker(["agent"]))])
+async def api_create_book(
     title: str,
     chapter_ids: list[str],
     feature: Optional[str] = None,
     conn=Depends(get_db),
 ):
-    """Bundle chapters into a book."""
+    """Bundle chapters into a book. Restricted to Agents and Admins."""
     for cid in chapter_ids:
         if get_chapter(cid, conn) is None:
             raise HTTPException(status_code=400, detail=f"Chapter '{cid}' not found")
@@ -201,32 +236,36 @@ def api_create_book(
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     save_book(book, conn)
-    return {"status": "created", "book": book.to_dict()}
+
+    book_dict = book.to_dict()
+    await manager.broadcast({"type": "NEW_BOOK", "data": book_dict})
+
+    return {"status": "created", "book": book_dict}
 
 
-@app.get("/books", response_model=list[dict])
+@app.get("/books", response_model=list[dict], dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_list_books(conn=Depends(get_db)):
-    """List all books."""
+    """List all books. Restricted to Auditors and Admins."""
     return [b.to_dict() for b in list_books(conn)]
 
 
-@app.get("/book/{book_id}", response_model=dict)
+@app.get("/book/{book_id}", response_model=dict, dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_get_book(book_id: str, conn=Depends(get_db)):
-    """Get a single book by ID."""
+    """Get a single book by ID. Restricted to Auditors and Admins."""
     b = get_book(book_id, conn)
     if b is None:
         raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found")
     return b.to_dict()
 
 
-@app.post("/book/{book_id}/edition", response_model=dict, dependencies=[Depends(verify_api_key)])
-def api_new_edition(
+@app.post("/book/{book_id}/edition", response_model=dict, dependencies=[Depends(RoleChecker(["agent"]))])
+async def api_new_edition(
     book_id: str,
     title: Optional[str] = None,
     chapter_ids: Optional[list[str]] = None,
     conn=Depends(get_db),
 ):
-    """Create a new edition of a book (version bump)."""
+    """Create a new edition of a book (version bump). Restricted to Agents and Admins."""
     parent = get_book(book_id, conn)
     if parent is None:
         raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found")
@@ -245,18 +284,22 @@ def api_new_edition(
         parent_book_id=parent.id,
     )
     save_book(new_book, conn)
-    return {"status": "created", "book": new_book.to_dict()}
+
+    book_dict = new_book.to_dict()
+    await manager.broadcast({"type": "NEW_BOOK", "data": book_dict})
+
+    return {"status": "created", "book": book_dict}
 
 
 # --- Export & Diff ---
 
-@app.get("/export/book/{book_id}")
+@app.get("/export/book/{book_id}", dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_export_book(
     book_id: str,
     format: str = Query("json", pattern="^(json|markdown)$"),
     conn=Depends(get_db),
 ):
-    """Export a book with all its chapters."""
+    """Export a book with all its chapters. Restricted to Auditors and Admins."""
     book = get_book(book_id, conn)
     if book is None:
         raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found")
@@ -266,7 +309,6 @@ def api_export_book(
     if format == "json":
         return {"book": book.to_dict(), "chapters": [ch.to_dict() for ch in chapters]}
 
-    # Markdown
     lines = [f"# {book.title}", ""]
     lines.append(f"**Book ID:** {book.id}  ")
     lines.append(f"**Feature:** {book.feature}  ")
@@ -295,15 +337,13 @@ def api_export_book(
     return PlainTextResponse("\n".join(lines), media_type="text/markdown")
 
 
-
-
-@app.get("/diff/books")
+@app.get("/diff/books", dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_diff_books(
     id_a: str = Query(..., description="First book ID"),
     id_b: str = Query(..., description="Second book ID"),
     conn=Depends(get_db),
 ):
-    """Compare two books — shows added, removed, and kept chapters."""
+    """Compare two books. Restricted to Auditors and Admins."""
     book_a = get_book(id_a, conn)
     book_b = get_book(id_b, conn)
     if book_a is None:
@@ -327,14 +367,36 @@ def api_diff_books(
     }
 
 
-@app.get("/shelf")
+@app.get("/shelf", dependencies=[Depends(RoleChecker(["auditor"]))])
 def api_shelf(conn=Depends(get_db)):
-    """Library view grouped by feature."""
+    """Library view grouped by feature. Restricted to Auditors and Admins."""
     books = list_books(conn)
     features: dict[str, list] = {}
     for b in books:
         features.setdefault(b.feature, []).append(b.to_dict())
     return features
+
+
+# --- Admin Exclusive Administrative Endpoints ---
+
+@app.delete("/chapter/{chapter_id}", status_code=200, dependencies=[Depends(RoleChecker([]))])
+def api_delete_chapter(chapter_id: str, conn=Depends(get_db)):
+    """Delete a specific chapter. Restricted strictly to Admin role only."""
+    if get_chapter(chapter_id, conn) is None:
+        raise HTTPException(status_code=404, detail=f"Chapter '{chapter_id}' not found")
+    conn.execute("DELETE FROM chapters WHERE id = ?", (chapter_id,))
+    conn.commit()
+    return {"status": "deleted", "target": chapter_id}
+
+
+@app.delete("/book/{book_id}", status_code=200, dependencies=[Depends(RoleChecker([]))])
+def api_delete_book(book_id: str, conn=Depends(get_db)):
+    """Delete a specific book. Restricted strictly to Admin role only."""
+    if get_book(book_id, conn) is None:
+        raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found")
+    conn.execute("DELETE FROM books WHERE id = ?", (book_id,))
+    conn.commit()
+    return {"status": "deleted", "target": book_id}
 
 
 @app.get("/health")
