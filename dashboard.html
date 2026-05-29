@@ -188,6 +188,23 @@
     line-height: 1.5;
   }
 
+  .detail-row { position: relative; }
+  .copy-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text2);
+    transition: background 0.15s, color 0.15s;
+  }
+  .copy-btn:hover { background: var(--accent); color: #fff; }
+  .copy-btn.copied { background: #2ecc71; color: #fff; border-color: #2ecc71; }
+
   /* Diff view */
   .diff-section { margin-bottom: 16px; }
   .diff-section h4 { font-size: 13px; margin-bottom: 8px; }
@@ -562,6 +579,18 @@ async function showBookDetail(bookId) {
   panel.scrollIntoView({ behavior: 'smooth' });
 }
 
+function copyText(btn) {
+  const text = btn.parentElement.querySelector('.detail-value').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
 async function showChapterDetail(chapterId) {
   const ch = chaptersData.find(c => c.id === chapterId);
   if (!ch) return;
@@ -571,8 +600,8 @@ async function showChapterDetail(chapterId) {
     <div class="detail-row"><div class="detail-label">Actor</div><div class="detail-value">${ch.actor}</div></div>
     <div class="detail-row"><div class="detail-label">Source</div><div class="detail-value">${ch.source}</div></div>
     <div class="detail-row"><div class="detail-label">Timestamp</div><div class="detail-value">${new Date(ch.timestamp).toLocaleString()}</div></div>
-    <div class="detail-row"><div class="detail-label">Prompt</div><div class="detail-value prompt-block">${ch.prompt}</div></div>
-    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${ch.result}</div></div>`;
+    <div class="detail-row"><div class="detail-label">Prompt</div><div class="detail-value prompt-block">${ch.prompt}</div><button class="copy-btn" onclick="copyText(this)">Copy</button></div>
+    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${ch.result}</div><button class="copy-btn" onclick="copyText(this)">Copy</button></div>`;
 
   const panel = document.getElementById('chapterDetail');
   panel.innerHTML = html;
