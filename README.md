@@ -537,6 +537,68 @@ export async function POST(req: Request) {
   return result.toDataStreamResponse();
 }
 ```
+
+---
+
+### TypeScript / Node.js — fetch
+
+```typescript
+const API = "http://localhost:8000";
+
+async function logChapter(
+  prompt: string,
+  result: string,
+  actor: string = "ts-agent",
+  source: string = "nodejs"
+): Promise<string> {
+  const params = new URLSearchParams({ 
+    prompt: prompt.slice(0, 2000), 
+    result: result.slice(0, 2000), 
+    actor, 
+    source 
+  });
+  
+  const resp = await fetch(`${API}/chapter?${params}`, { method: "POST" });
+  if (!resp.ok) throw new Error(`Failed to log chapter: ${resp.statusText}`);
+  
+  const data = await resp.json();
+  return data.chapter.id;
+}
+
+async function bundleBook(
+  title: string,
+  chapterIds: string[],
+  feature: string = ""
+): Promise<{ id: string; title: string; version: number }> {
+  const params = new URLSearchParams({ title, feature: feature || title });
+  
+  const resp = await fetch(`${API}/book?${params}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(chapterIds),
+  });
+  if (!resp.ok) throw new Error(`Failed to bundle book: ${resp.statusText}`);
+  
+  const data = await resp.json();
+  return data.book;
+}
+
+// Usage Example
+async function main() {
+  try {
+    const c1 = await logChapter("Summarize support tickets", "42 open tickets, 5 critical");
+    const c2 = await logChapter("Draft response template", "Template created for critical tier");
+    
+    const book = await bundleBook("Support Triage", [c1, c2], "Support Automation");
+    console.log(`Created book: ${book.id} (v${book.version})`);
+  } catch (error) {
+    console.error("Execution failed:", error);
+  }
+}
+
+main();
+```
+
 ---
 
 ### Shell Script
