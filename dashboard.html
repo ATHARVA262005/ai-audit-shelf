@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -495,7 +495,6 @@ function renderDiff() {
     </div>
     <div id="diffResults"></div>`;
   document.getElementById('content').innerHTML = html;
-  // Default second select to a different book
   if (booksData.length > 1) document.getElementById('diffB').value = booksData[1].id;
 }
 
@@ -592,8 +591,36 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
+function initWebSocket() {
+  const wsUrl = API.replace(/^http/, 'ws') + '/ws/events';
+  const ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      const eventData = JSON.parse(event.data);
+      if (eventData.type === 'NEW_CHAPTER') {
+        chaptersData.unshift(eventData.data);
+      } else if (eventData.type === 'NEW_BOOK') {
+        booksData.unshift(eventData.data);
+      }
+
+      const activeNavItem = document.querySelector('.nav-item.active');
+      if (activeNavItem && pages[activeNavItem.dataset.page]) {
+        pages[activeNavItem.dataset.page]();
+      }
+    } catch (e) {}
+  };
+
+  ws.onclose = () => {
+    setTimeout(initWebSocket, 5000);
+  };
+}
+
 // --- Init ---
-loadAll().then(() => renderShelf());
+loadAll().then(() => {
+  renderShelf();
+  initWebSocket();
+});
 </script>
 </body>
 </html>

@@ -129,11 +129,45 @@ curl "http://localhost:8000/diff/books?id_a=b_001&id_b=b_002"
 curl "http://localhost:8000/export/book/b_001?format=markdown"
 ```
 
-**Auth (optional):** Set `AUDIT_API_KEY` env var to require `X-API-Key` header on write endpoints.
+**Authentication (breaking change in v0.2.0):** The API now uses JWT + RBAC. The old `AUDIT_API_KEY` / `X-API-Key` flow has been removed.
+
+> ⚠️ **Breaking change:** All endpoints (except `GET /health`) now require a Bearer token. Update any scripts or integrations that used `X-API-Key`.
+
+**Step 1 — Get a token:**
 
 ```bash
-export AUDIT_API_KEY=secret123
-# Now POST requests need: -H "X-API-Key: secret123"
+curl -X POST "http://localhost:8000/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=agent&password=agent123"
+# → {"access_token": "<JWT>", "token_type": "bearer"}
+```
+
+**Step 2 — Use the token on every request:**
+
+```bash
+TOKEN="<paste JWT here>"
+
+# Agent: write chapters and books
+curl -X POST "http://localhost:8000/chapter?prompt=Analyze+reviews&result=85%25+positive&actor=agent&source=langchain" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Auditor: read data and run diffs
+curl "http://localhost:8000/shelf" -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:8000/diff/books?id_a=b_001&id_b=b_002" -H "Authorization: Bearer $TOKEN"
+```
+
+**Default sandbox accounts** (password = username + `123`):
+
+| Role | Username | Password | Permissions |
+|---|---|---|---|
+| Admin | `admin` | `admin123` | Full access + DELETE |
+| Auditor | `auditor` | `auditor123` | Read-only (GET endpoints) |
+| Agent | `agent` | `agent123` | Write-only (POST endpoints) |
+
+Set `AUDIT_JWT_SECRET` env var to override the default signing key in production:
+
+```bash
+export AUDIT_JWT_SECRET=your-secret-key
 ```
 
 ---
@@ -152,7 +186,15 @@ start dashboard.html   # Windows
 xdg-open dashboard.html  # Linux
 ```
 
-The dashboard connects to `http://localhost:8000` and provides:
+The dashboard will show a **login form** on first load. Use any of the sandbox accounts above (e.g. `auditor` / `auditor123` to browse). The JWT is stored in `localStorage` and sent automatically as `Authorization: Bearer` on all requests.
+
+The API URL is auto-detected from `window.location`. To point to a different server, click **⚙️ API URL** in the sidebar or set it via `localStorage`:
+
+```js
+localStorage.setItem('auditApiUrl', 'https://my-server.example.com');
+```
+
+The dashboard connects to the configured API URL and provides:
 
 - **Library** — bookshelf grouped by feature
 - **Books** — table view with export buttons
