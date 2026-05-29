@@ -345,6 +345,9 @@ function getApiUrl() {
 const API = getApiUrl();
 let booksData = [];
 let chaptersData = [];
+let ws = null;
+let reconnectAttempts = 0;
+const maxReconnectDelay = 30000;
 
 async function fetchJSON(url) {
   const r = await fetch(url);
@@ -592,8 +595,70 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
+function initWebSocket() {
+  const token = localStorage.getItem('jwt_token');
+  if (!token) {
+    console.warn('WebSocket connection suspended: Missing active JWT token.');
+    return;
+  }
+
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const apiBaseUrl = getApiUrl();
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const cleanHost = apiBaseUrl.replace(/^https?:\/\//, '');
+  const wsUrl = `${wsProtocol}//${cleanHost}/ws/events?token=${encodeURIComponent(token)}`;
+
+  ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      const eventData = JSON.parse(event.data);
+      if (eventData.type === 'NEW_CHAPTER') {
+        chaptersData.unshift(eventData.data);
+      } else if (eventData.type === 'NEW_BOOK') {
+        booksData.unshift(eventData.data);
+      }
+
+      const activeNavItem = document.querySelector('.nav-item.active');
+      if (activeNavItem && pages[activeNavItem.dataset.page]) {
+        pages[activeNavItem.dataset.page]();
+      }
+    } catch (e) {
+      console.error('Failed to process WebSocket message:', e, event.data);
+    }
+  };
+
+  ws.onerror = (error) => {
+    console.error('WebSocket error encountered:', error);
+    ws.close();
+  };
+
+  ws.onclose = (event) => {
+    if (event.code === 1008) {
+      console.error('WebSocket connection rejected due to authorization policy violations.');
+      return;
+    }
+    
+    reconnectAttempts++;
+    const calculatedBackoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts) + (Math.random() * 1000), maxReconnectDelay);
+    console.warn(`WebSocket closed. Retrying connection in ${Math.round(calculatedBackoffDelay / 1000)}s...`);
+    setTimeout(initWebSocket, calculatedBackoffDelay);
+  };
+
+  ws.onopen = () => {
+    console.log('WebSocket pipeline connected successfully.');
+    reconnectAttempts = 0;
+  };
+}
+
 // --- Init ---
-loadAll().then(() => renderShelf());
+loadAll().then(() => {
+  renderShelf();
+  initWebSocket();
+});
 </script>
 </body>
 </html>
