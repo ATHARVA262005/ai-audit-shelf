@@ -53,6 +53,9 @@ def api_add_chapter(
     result: str,
     actor: str = "anonymous",
     source: str = "manual",
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    seed: Optional[int] = None,
     conn=Depends(get_db),
 ):
     """Log a new chapter (atomic AI action)."""
@@ -64,9 +67,13 @@ def api_add_chapter(
         actor=actor,
         timestamp=datetime.now(timezone.utc).isoformat(),
         source=source,
+        model=model,
+        temperature=temperature,
+        seed=seed,
     )
     save_chapter(chapter, conn)
     return {"status": "created", "chapter": chapter.to_dict()}
+
 
 
 @app.get("/chapters", response_model=list[dict])
@@ -208,10 +215,17 @@ def api_export_book(
         lines.append(f"\n**Actor:** {ch.actor}  ")
         lines.append(f"**Source:** {ch.source}  ")
         lines.append(f"**Timestamp:** {ch.timestamp}  ")
+        if ch.model:
+            lines.append(f"**Model:** `{ch.model}`  ")
+        if ch.temperature is not None:
+            lines.append(f"**Temperature:** {ch.temperature}  ")
+        if ch.seed is not None:
+            lines.append(f"**Seed:** {ch.seed}  ")
         lines.append(f"\n### Prompt\n\n> {ch.prompt}\n")
         lines.append(f"### Result\n\n{ch.result}\n")
         lines.append("---\n")
     return PlainTextResponse("\n".join(lines), media_type="text/markdown")
+
 
 
 @app.get("/diff/books")

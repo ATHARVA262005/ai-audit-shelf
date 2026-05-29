@@ -13,7 +13,11 @@ class Chapter:
     actor: str
     timestamp: str
     source: str = "manual"
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    seed: Optional[int] = None
     metadata: dict = field(default_factory=dict)
+
 
     def to_dict(self):
         return asdict(self)

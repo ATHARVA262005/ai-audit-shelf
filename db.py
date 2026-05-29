@@ -19,7 +19,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 
 def init_db(conn: Optional[sqlite3.Connection] = None):
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist and run dynamic column migrations."""
     should_close = conn is None
     if conn is None:
         conn = get_connection()
@@ -31,6 +31,9 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             actor TEXT NOT NULL,
             timestamp TEXT NOT NULL,
             source TEXT DEFAULT 'manual',
+            model TEXT,
+            temperature REAL,
+            seed INTEGER,
             metadata TEXT DEFAULT '{}'
         );
 
@@ -50,6 +53,19 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             value INTEGER DEFAULT 0
         );
     """)
+    
+    # Run dynamic schema migrations for existing databases
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(chapters)")
+    columns = [row["name"] for row in cursor.fetchall()]
+    
+    if "model" not in columns:
+        conn.execute("ALTER TABLE chapters ADD COLUMN model TEXT")
+    if "temperature" not in columns:
+        conn.execute("ALTER TABLE chapters ADD COLUMN temperature REAL")
+    if "seed" not in columns:
+        conn.execute("ALTER TABLE chapters ADD COLUMN seed INTEGER")
+
     # Ensure counters exist
     for name in ("chapter", "book"):
         conn.execute(
@@ -59,6 +75,7 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
     conn.commit()
     if should_close:
         conn.close()
+
 
 
 def next_id(conn: sqlite3.Connection, prefix: str) -> str:
@@ -77,8 +94,8 @@ def next_id(conn: sqlite3.Connection, prefix: str) -> str:
 
 def save_chapter(chapter: Chapter, conn: sqlite3.Connection):
     conn.execute(
-        """INSERT INTO chapters (id, prompt, result, actor, timestamp, source, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO chapters (id, prompt, result, actor, timestamp, source, model, temperature, seed, metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             chapter.id,
             chapter.prompt,
@@ -86,6 +103,9 @@ def save_chapter(chapter: Chapter, conn: sqlite3.Connection):
             chapter.actor,
             chapter.timestamp,
             chapter.source,
+            chapter.model,
+            chapter.temperature,
+            chapter.seed,
             json.dumps(chapter.metadata),
         ),
     )
@@ -105,6 +125,9 @@ def get_chapter(chapter_id: str, conn: sqlite3.Connection) -> Optional[Chapter]:
         actor=row["actor"],
         timestamp=row["timestamp"],
         source=row["source"],
+        model=row["model"],
+        temperature=row["temperature"],
+        seed=row["seed"],
         metadata=json.loads(row["metadata"]),
     )
 
@@ -119,10 +142,15 @@ def list_chapters(conn: sqlite3.Connection) -> list[Chapter]:
             actor=r["actor"],
             timestamp=r["timestamp"],
             source=r["source"],
+            model=r["model"],
+            temperature=r["temperature"],
+            seed=r["seed"],
             metadata=json.loads(r["metadata"]),
         )
         for r in rows
     ]
+
+
 
 
 # --- Book operations ---
