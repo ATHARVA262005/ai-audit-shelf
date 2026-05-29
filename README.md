@@ -11,7 +11,12 @@ Repository: [github.com/ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA
 > ⭐️ **If you find this project useful, please consider giving it a star!**  
 > [ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA262005/ai-audit-shelf)
 
+[![Stars](https://img.shields.io/github/stars/ATHARVA262005/ai-audit-shelf?style=flat&color=yellow)](https://github.com/ATHARVA262005/ai-audit-shelf/stargazers)
+[![Forks](https://img.shields.io/github/forks/ATHARVA262005/ai-audit-shelf?style=flat)](https://github.com/ATHARVA262005/ai-audit-shelf/network/members)
 [![Issues](https://img.shields.io/github/issues/ATHARVA262005/ai-audit-shelf.svg)](https://github.com/ATHARVA262005/ai-audit-shelf/issues)
+[![Contributors](https://img.shields.io/github/contributors/ATHARVA262005/ai-audit-shelf?color=blue)](https://github.com/ATHARVA262005/ai-audit-shelf/graphs/contributors)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![GSSoC 2026](https://img.shields.io/badge/GSSoC-2026-orange)](https://gssoc.girlscript.tech/)
 
 ```
 Library
@@ -155,6 +160,8 @@ The dashboard connects to `http://localhost:8000` and provides:
 - **Search** — filter by actor, keyword, date
 - **Diff** — compare two editions side-by-side
 
+> **API URL config:** If your API server runs on a different port or host, type the URL into the input at the bottom of the sidebar. The value is saved in your browser and persists across reloads.
+
 ---
 
 ### 4. Agent Demo
@@ -175,214 +182,24 @@ The demo simulates a "Product Review Automation" workflow — 4 steps, each logg
 
 ## Integration Recipes
 
-### Python — requests (any framework)
+AI Audit Shelf is built to be extremely lightweight and integrate with any AI stack in a few lines of code. 
 
-```python
-import requests
+All detailed, copy-pasteable integration recipes have been consolidated into our dedicated documentation:
 
-API = "http://localhost:8000"
+👉 **[View Integration Recipes Guide](docs/integration-recipes.md)**
 
-def log_chapter(prompt: str, result: str, actor: str = "my-agent") -> str:
-    """Log an action. Returns the chapter ID."""
-    resp = requests.post(f"{API}/chapter", params={
-        "prompt": prompt,
-        "result": result,
-        "actor": actor,
-        "source": "my-app",
-    })
-    return resp.json()["chapter"]["id"]
+Inside, you will find complete, typed examples for:
 
-def bundle_book(title: str, chapter_ids: list[str], feature: str = "") -> dict:
-    """Bundle chapters into a book."""
-    resp = requests.post(f"{API}/book", params={
-        "title": title,
-        "feature": feature or title,
-    }, json=chapter_ids)
-    return resp.json()["book"]
-
-# Usage
-c1 = log_chapter("Translate doc to Spanish", "Translation complete, 2400 words")
-c2 = log_chapter("Review translation quality", "Score: 94/100, 3 minor corrections")
-book = bundle_book("Translation Pipeline", [c1, c2])
-print(f"Created {book['id']}")
-```
+* 🐍 **[Python (requests)](docs/integration-recipes.md#python--requests-general-frameworks)** — Simple API wrapper for custom scripts and general frameworks.
+* 🦜 **[LangChain Callback Handler](docs/integration-recipes.md#langchain--callback-handler)** — Automatically log all prompt generations and tool executions within LangChain agents.
+* 🦙 **[LlamaIndex Callback Handler](docs/integration-recipes.md#llamaindex--callback-handler)** — Track retrieval, query pipelines, and response synthesis without indexing noise.
+* 🤖 **[OpenAI Function Calls](docs/integration-recipes.md#openai--function-calls)** — Log direct completions and function calls cleanly.
+* ⚡ **[Vercel AI SDK (Next.js)](docs/integration-recipes.md#vercel-ai-sdk--nextjs-app-router)** — A streaming Next.js App Router API endpoint with a background `onFinish` logging callback.
+* 🐚 **[Shell Command Wrapper](docs/integration-recipes.md#shell-script--command-wrapper)** — Audit terminal commands, python scripts, and deployment steps.
+* 🌐 **[curl / REST Reference](docs/integration-recipes.md#curl-any-language)** — Quick API examples for any other language.
 
 ---
 
-### LangChain — Callback Handler
-
-```python
-from langchain.callbacks.base import BaseCallbackHandler
-import requests
-
-API = "http://localhost:8000"
-
-class AuditCallbackHandler(BaseCallbackHandler):
-    """Logs every LLM call to the AI Audit server."""
-
-    def __init__(self, actor: str = "langchain-agent"):
-        self.actor = actor
-        self._chapters = []
-
-    def on_llm_end(self, response, **kwargs):
-        prompt = response.generations[0][0].text if response.generations else ""
-        chapter_id = self._log(
-            prompt=str(kwargs.get("prompts", [""]))[0],
-            result=prompt,
-        )
-        self._chapters.append(chapter_id)
-
-    def on_tool_end(self, output: str, **kwargs):
-        chapter_id = self._log(
-            prompt=f"Tool: {kwargs.get('name', 'unknown')}",
-            result=output[:2000],
-        )
-        self._chapters.append(chapter_id)
-
-    def _log(self, prompt: str, result: str) -> str:
-        resp = requests.post(f"{API}/chapter", params={
-            "prompt": prompt,
-            "result": result,
-            "actor": self.actor,
-            "source": "langchain",
-        })
-        return resp.json()["chapter"]["id"]
-
-    def bundle(self, title: str, feature: str = "") -> dict:
-        """Bundle all logged chapters into a book."""
-        resp = requests.post(f"{API}/book", params={
-            "title": title,
-            "feature": feature or title,
-        }, json=self._chapters)
-        return resp.json()["book"]
-
-
-# Usage
-from langchain.chat_models import ChatOpenAI
-from langchain.agents import initialize_agent, Tool
-
-handler = AuditCallbackHandler(actor="support-bot")
-
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-agent = initialize_agent(
-    tools=[Tool(name="Search", func=lambda q: "results...", description="Search docs")],
-    llm=llm,
-    callbacks=[handler],
-)
-
-agent.run("Find the refund policy for EU customers")
-handler.bundle("EU Refund Lookup", feature="Support Automation")
-```
-
----
-
-### OpenAI — Function Calls
-
-```python
-from openai import OpenAI
-import requests
-import json
-
-API = "http://localhost:8000"
-client = OpenAI()
-
-def log_chapter(prompt: str, result: str) -> str:
-    resp = requests.post(f"{API}/chapter", params={
-        "prompt": prompt,
-        "result": result,
-        "actor": "openai-agent",
-        "source": "openai",
-    })
-    return resp.json()["chapter"]["id"]
-
-def run_with_audit(user_message: str):
-    """Run an OpenAI call with full audit logging."""
-    # Log the request
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": user_message}],
-        tools=[{
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "description": "Get current weather",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"location": {"type": "string"}},
-                },
-            },
-        }],
-    )
-
-    msg = response.choices[0].message
-    result = msg.content or json.dumps(msg.tool_calls[0].function.model_dump())
-
-    chapter_id = log_chapter(prompt=user_message, result=result)
-    print(f"Logged as {chapter_id}")
-    return result
-
-# Usage
-run_with_audit("What's the weather in Tokyo?")
-```
-
----
-
-### Shell Script
-
-```bash
-#!/bin/bash
-# audit-wrap.sh — wrap any command and log its execution
-
-API="http://localhost:8000"
-ACTOR="${AUDIT_ACTOR:-shell}"
-PROMPT="$1"
-shift
-RESULT=$("$@" 2>&1)
-EXIT_CODE=$?
-
-# Log to audit server
-CHAPTER_ID=$(curl -s -X POST "$API/chapter" \
-  --data-urlencode "prompt=$PROMPT" \
-  --data-urlencode "result=$RESULT" \
-  --data-urlencode "actor=$ACTOR" \
-  --data-urlencode "source=shell" \
-  | python -c "import sys,json; print(json.load(sys.stdin)['chapter']['id'])")
-
-echo "Audit: $CHAPTER_ID (exit $EXIT_CODE)"
-exit $EXIT_CODE
-```
-
-Usage:
-
-```bash
-# Wrap any command
-./audit-wrap.sh "Deploy to staging" ./deploy.sh staging
-./audit-wrap.sh "Run test suite" pytest tests/
-
-# Set a custom actor
-AUDIT_ACTOR="ci-bot" ./audit-wrap.sh "Build release" make build
-```
-
----
-
-### curl (any language)
-
-```bash
-# Log a chapter
-curl -X POST "http://localhost:8000/chapter" \
-  -G \
-  --data-urlencode "prompt=Analyze customer churn" \
-  --data-urlencode "result=Churn rate: 4.2%, down from 5.1%" \
-  --data-urlencode "actor=data-agent" \
-  --data-urlencode "source=custom"
-
-# Create a book (title/feature as query params, chapter_ids as JSON body)
-curl -X POST "http://localhost:8000/book?title=Churn%20Analysis%20Q1&feature=Analytics" \
-  -H "Content-Type: application/json" \
-  -d '["c_001", "c_002", "c_003"]'
-```
-
----
 
 ## Project Structure
 
@@ -421,24 +238,66 @@ Full interactive docs at `http://localhost:8000/docs` when the server is running
 
 ---
 
+## Contributors
+
+Thanks to everyone who has contributed to this project! 🎉
+
+[![Contributors](https://contrib.rocks/image?repo=ATHARVA262005/ai-audit-shelf)](https://github.com/ATHARVA262005/ai-audit-shelf/graphs/contributors)
+
+---
+
+## Roadmap
+
+We are actively developing the next version of AI Audit Shelf, focusing heavily on **reproducibility** and **agent pipeline safety**. Here is what we are building next (inspired directly by community feedback!):
+
+* 🧪 **First-Class Reproducibility Parameters:** First-class database support for tracking generation metadata (`model_version`, `temperature`, `seed`, `top_p`) so prompt differences are deterministic.
+* 🛑 **Verification & Validation Gates:** Integration of synchronous and asynchronous validation callbacks (hooks) to halt execution flows and flag errors before prompt drift propagates downstream.
+* 🔗 **Contextual Session Tracking:** Automatic linking of prompt versions directly to the originating user `session_id` or failing execution context.
+* 📦 **Docker Support:** Containerized deployment templates for single-command self-hosting.
+
+Want to help shape these features? Join the discussion on our [Issues tracker](https://github.com/ATHARVA262005/ai-audit-shelf/issues)!
+
+---
+
 ## Contributing
 
-Contributions, bug reports, ideas, and feature requests are welcome!
 
-- [Open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) to report bugs or suggest new features.
-- Make a pull request for fixes or improvements.
-- Star the repo if you like it!
+All contributions are welcome — from fixing a typo to adding a full integration recipe.
 
-If you have questions, open a discussion or contact [@ATHARVA262005](https://github.com/ATHARVA262005).
+### Ways to contribute
 
-For larger contributions, please [open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) first to discuss your idea.
+| Type | How |
+|---|---|
+| 🐛 Bug fix | Open an issue, then a PR |
+| 📖 Docs / Recipe | Add an integration example to the README |
+| ✨ Feature | Open an issue first to discuss |
+| ⭐ No code? | Star the repo — it helps more people find it |
 
+### Good first issues
+
+Looking for a place to start? Check the [`good first issue`](https://github.com/ATHARVA262005/ai-audit-shelf/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) label — these are small, well-defined tasks perfect for first-time contributors.
+
+### How to submit a PR
+
+```bash
+# 1. Fork the repo and clone your fork
+git clone https://github.com/<your-username>/ai-audit-shelf
+cd ai-audit-shelf
+
+# 2. Create a branch
+git checkout -b feat/your-feature-name
+
+# 3. Make your changes and commit
+git commit -m "feat: describe your change"
+
+# 4. Push and open a PR against main
+git push origin feat/your-feature-name
 ```
-```
+
+For questions, open a [discussion](https://github.com/ATHARVA262005/ai-audit-shelf/discussions) or reach out to [@ATHARVA262005](https://github.com/ATHARVA262005).
+
+---
 
 ## License
 
 MIT — see [LICENSE](LICENSE)
-
-```
-

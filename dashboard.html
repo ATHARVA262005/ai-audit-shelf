@@ -276,6 +276,40 @@
 
   /* Loading */
   .loading { text-align: center; padding: 40px; color: var(--text2); }
+
+  /* API config */
+  .api-config {
+    border-top: 1px solid var(--border);
+    padding: 16px 20px;
+  }
+  .api-config label {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text2);
+    margin-bottom: 6px;
+  }
+  .api-config input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    outline: none;
+  }
+  .api-config input:focus { border-color: var(--accent); }
+  .api-config .saved {
+    font-size: 10px;
+    color: var(--green);
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .api-config .saved.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -292,6 +326,11 @@
     <div class="nav-item" data-page="search"><span class="nav-icon">&#x1f50d;</span> Search</div>
     <div class="nav-item" data-page="diff"><span class="nav-icon">&#x1f504;</span> Diff</div>
   </div>
+  <div class="api-config">
+    <label for="apiUrl">API URL</label>
+    <input type="text" id="apiUrl" placeholder="http://localhost:8000" />
+    <div class="saved" id="apiSaved">Saved</div>
+  </div>
 </div>
 
 <div class="main" id="content">
@@ -300,20 +339,33 @@
 
 <script>
 function getApiUrl() {
-  const stored = localStorage.getItem('auditApiUrl');
-  if (stored) return stored.replace(/\/\$/, '');
-  const proto = location.protocol === 'https:' ? 'https:' : 'http:';
-  const host = location.hostname || 'localhost';
-  return proto + '//' + host + ':8000';
+  return (localStorage.getItem('api_url') || 'http://localhost:8000').replace(/\/+$/, '');
 }
+
 const API = getApiUrl();
 let booksData = [];
 let chaptersData = [];
+let ws = null;
+let reconnectAttempts = 0;
+const maxReconnectDelay = 30000;
 
 async function fetchJSON(url) {
   const r = await fetch(url);
   return r.json();
 }
+
+(function initApiConfig() {
+  const input = document.getElementById('apiUrl');
+  const saved = document.getElementById('apiSaved');
+  input.value = API;
+
+  input.addEventListener('change', () => {
+    const url = input.value.replace(/\/+$/, '');
+    localStorage.setItem('api_url', url);
+    saved.classList.add('show');
+    setTimeout(() => saved.classList.remove('show'), 2000);
+  });
+})();
 
 async function loadAll() {
   [booksData, chaptersData] = await Promise.all([
@@ -544,8 +596,22 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 function initWebSocket() {
-  const wsUrl = API.replace(/^http/, 'ws') + '/ws/events';
-  const ws = new WebSocket(wsUrl);
+  const token = localStorage.getItem('jwt_token');
+  if (!token) {
+    console.warn('WebSocket connection suspended: Missing active JWT token.');
+    return;
+  }
+
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const apiBaseUrl = getApiUrl();
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const cleanHost = apiBaseUrl.replace(/^https?:\/\//, '');
+  const wsUrl = `${wsProtocol}//${cleanHost}/ws/events?token=${encodeURIComponent(token)}`;
+
+  ws = new WebSocket(wsUrl);
 
   ws.onmessage = (event) => {
     try {
@@ -565,10 +631,26 @@ function initWebSocket() {
     }
   };
 
-  ws.onerror = () => ws.close();
+  ws.onerror = (error) => {
+    console.error('WebSocket error encountered:', error);
+    ws.close();
+  };
 
-  ws.onclose = () => {
-    setTimeout(initWebSocket, 5000);
+  ws.onclose = (event) => {
+    if (event.code === 1008) {
+      console.error('WebSocket connection rejected due to authorization policy violations.');
+      return;
+    }
+    
+    reconnectAttempts++;
+    const calculatedBackoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts) + (Math.random() * 1000), maxReconnectDelay);
+    console.warn(`WebSocket closed. Retrying connection in ${Math.round(calculatedBackoffDelay / 1000)}s...`);
+    setTimeout(initWebSocket, calculatedBackoffDelay);
+  };
+
+  ws.onopen = () => {
+    console.log('WebSocket pipeline connected successfully.');
+    reconnectAttempts = 0;
   };
 }
 
