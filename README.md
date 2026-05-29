@@ -595,7 +595,21 @@ Thanks to everyone who has contributed to this project! 🎉
 
 ---
 
+## Roadmap
+
+We are actively developing the next version of AI Audit Shelf, focusing heavily on **reproducibility** and **agent pipeline safety**. Here is what we are building next (inspired directly by community feedback!):
+
+* 🧪 **First-Class Reproducibility Parameters:** First-class database support for tracking generation metadata (`model_version`, `temperature`, `seed`, `top_p`) so prompt differences are deterministic.
+* 🛑 **Verification & Validation Gates:** Integration of synchronous and asynchronous validation callbacks (hooks) to halt execution flows and flag errors before prompt drift propagates downstream.
+* 🔗 **Contextual Session Tracking:** Automatic linking of prompt versions directly to the originating user `session_id` or failing execution context.
+* 📦 **Docker Support:** Containerized deployment templates for single-command self-hosting.
+
+Want to help shape these features? Join the discussion on our [Issues tracker](https://github.com/ATHARVA262005/ai-audit-shelf/issues)!
+
+---
+
 ## Contributing
+
 
 All contributions are welcome — from fixing a typo to adding a full integration recipe.
 
