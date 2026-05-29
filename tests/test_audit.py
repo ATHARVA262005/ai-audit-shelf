@@ -1,10 +1,15 @@
 import os
+os.environ["AUDIT_DEV_MODE"] = "true"
 import json
 import sqlite3
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
+
+# Add project root to sys.path so we can import modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Mock database path for testing
 TEST_DB_PATH = Path(__file__).parent / "test_audit.db"
@@ -24,26 +29,19 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_and_teardown_db():
     """Fixture to ensure a fresh, clean database for each test run."""
-    # Delete test database if it exists
-    if TEST_DB_PATH.exists():
-        try:
-            TEST_DB_PATH.unlink()
-        except OSError:
-            pass
-
-    # Initialize a fresh database schema
+    # Ensure test database exists and is fully initialized
     conn = get_connection(TEST_DB_PATH)
     init_db(conn)
+    
+    # Truncate all tables and reset sequence counters to ensure absolute pristine states across runs
+    conn.execute("DELETE FROM chapters")
+    conn.execute("DELETE FROM books")
+    conn.execute("UPDATE counters SET value = 0")
+    conn.commit()
     conn.close()
-
+    
     yield
 
-    # Clean up test database after the test
-    if TEST_DB_PATH.exists():
-        try:
-            TEST_DB_PATH.unlink()
-        except OSError:
-            pass
 
 
 # --- SQLite DB Layer Tests ---
@@ -172,10 +170,36 @@ def test_sequential_counters():
 # --- FastAPI HTTP API Integration Tests ---
 
 def test_api_health():
-    """Test API health check endpoint."""
+    """Test API health check endpoint and database connectivity validation."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "OK", "version": "0.1.0"}
+    res = response.json()
+    assert res["status"] == "healthy"
+    assert res["database"] == "connected"
+    assert res["version"] == "0.2.0"
+    assert "timestamp" in res
+
+
+def test_api_db_backup():
+    """Test that authenticated database online backup is triggered and executes successfully."""
+    response = client.post("/db/backup")
+    assert response.status_code == 200
+    res = response.json()
+    assert res["status"] == "success"
+    assert "backup_file" in res
+    assert "timestamp" in res
+    
+    # Assert backup file is physically generated
+    from pathlib import Path
+    from db import DB_PATH
+    backup_file_path = DB_PATH.parent / "backups" / res["backup_file"]
+    assert backup_file_path.exists()
+    
+    # Clean up backup artifact
+    try:
+        backup_file_path.unlink()
+    except OSError:
+        pass
 
 
 def test_api_add_and_list_chapters():
@@ -323,21 +347,26 @@ def test_api_book_exports():
 
 def test_api_diff_books():
     """Test book comparison differences."""
-    client.post("/chapter", params={"prompt": "Step A", "result": "A"})
-    client.post("/chapter", params={"prompt": "Step B", "result": "B"})
+    client.post("/chapter", params={"prompt": "Step A", "result": "Original output"})
+    client.post("/chapter", params={"prompt": "Step A updated", "result": "Modified output"})
     
-    client.post("/book", params={"title": "Original"}, json=["c_001"])
-    client.post("/book", params={"title": "Updated"}, json=["c_001", "c_002"])
+    client.post("/book", params={"title": "Original version"}, json=["c_001"])
+    client.post("/book", params={"title": "Updated version"}, json=["c_002"])
 
     response = client.get("/diff/books", params={"id_a": "b_001", "id_b": "b_002"})
     assert response.status_code == 200
     diff_data = response.json()
-    assert len(diff_data["kept"]) == 1
-    assert diff_data["kept"][0]["id"] == "c_001"
-    assert len(diff_data["added"]) == 1
-    assert diff_data["added"][0]["id"] == "c_002"
-    assert len(diff_data["removed"]) == 0
-
+    
+    # Verify semantic step comparisons for v0.2.0
+    assert "steps_comparison" in diff_data
+    assert len(diff_data["steps_comparison"]) == 1
+    step = diff_data["steps_comparison"][0]
+    assert step["step_number"] == 1
+    assert step["chapter_a"]["id"] == "c_001"
+    assert step["chapter_b"]["id"] == "c_002"
+    assert step["are_identical"] is False
+    assert any(x.startswith("- ") for x in step["prompt_diff"])
+    assert any(x.startswith("+ ") for x in step["prompt_diff"])
 
 
 def test_api_validation_gates():
@@ -412,3 +441,233 @@ def test_api_validation_gates():
     assert response.json()["validation_status"] == "failed"
     assert "not a valid JSON document" in response.json()["validation_message"]
 
+
+def test_api_pagination():
+    """Test pagination limits and offsets on list and search endpoints."""
+    # Seed 5 unique chapters
+    for i in range(1, 6):
+        client.post(
+            "/chapter",
+            json={"prompt": f"Prompt {i}", "result": f"Result {i}", "actor": "PaginationTester"}
+        )
+
+    # 1. Test limit of 2 chapters
+    response = client.get("/chapters", params={"limit": 2})
+    assert response.status_code == 200
+    res = response.json()
+    assert len(res) == 2
+
+    # 2. Test offset
+    response = client.get("/chapters", params={"limit": 2, "offset": 2})
+    assert response.status_code == 200
+    res_offset = response.json()
+    assert len(res_offset) == 2
+    # Ensure they are different
+    assert res[0]["id"] != res_offset[0]["id"]
+
+    # 3. Test search pagination
+    response = client.get("/search/chapters", params={"actor": "PaginationTester", "limit": 2, "offset": 1})
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_redos_regex_timeout():
+    """Test that catastrophic backtracking ReDoS pattern times out safely instead of freezing the thread."""
+    client.post(
+        "/chapter",
+        json={"prompt": "ReDoS prompt", "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"}
+    )
+    # Catastrophic backtracking pattern: (a+)+$
+    # We query the validate endpoint on c_004 (or the new chapter ID)
+    # Find latest logged chapter ID first
+    latest_chapters = client.get("/chapters", params={"limit": 1}).json()
+    latest_id = latest_chapters[0]["id"]
+
+    response = client.post(
+        f"/chapter/{latest_id}/validate",
+        params={"regex_pattern": "(a+)+$"}
+    )
+    assert response.status_code == 200
+    # Should report failed due to timeout
+    assert response.json()["validation_status"] == "failed"
+    assert "timed out" in response.json()["validation_message"]
+
+
+def test_input_boundaries():
+    """Test size-bounded validations for prompts and results."""
+    huge_prompt = "a" * 60000
+    # JSON body validation
+    response = client.post(
+        "/chapter",
+        json={"prompt": huge_prompt, "result": "short"}
+    )
+    assert response.status_code == 422  # Pydantic validation fails
+
+    # Query param fallback validation
+    response = client.post(
+        "/chapter",
+        params={"prompt": huge_prompt, "result": "short"}
+    )
+    assert response.status_code == 400
+
+
+def test_concurrent_id_generation():
+    """Test that concurrent next_id sequential counter runs are thread-safe and never collide."""
+    import concurrent.futures
+    from db import get_connection, next_id
+
+    ids = []
+    def get_next_book_id():
+        conn = get_connection()
+        try:
+            return next_id(conn, "book")
+        finally:
+            conn.close()
+
+    # Use ThreadPoolExecutor to generate 15 sequential IDs concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(get_next_book_id) for _ in range(15)]
+        for f in concurrent.futures.as_completed(futures):
+            ids.append(f.result())
+
+    # Assert that all 15 generated IDs are fully unique
+    assert len(ids) == 15
+    assert len(set(ids)) == 15
+
+
+def test_cli_operations(capsys):
+    """Test all CLI commands inside cli.py using mock arguments and capsys output inspections."""
+    import argparse
+    import cli
+    from db import get_connection
+
+    # Clear active test DB data first to ensure clean state
+    conn = get_connection()
+    try:
+        from db import init_db
+        init_db(conn)
+        conn.execute("DELETE FROM chapters")
+        conn.execute("DELETE FROM books")
+        conn.execute("DELETE FROM counters")
+        conn.commit()
+    finally:
+        conn.close()
+
+    # 1. Test CLI add-chapter command
+    add_args = argparse.Namespace(
+        prompt="Initial prompt check",
+        result="Initial model result response",
+        actor="cli_tester",
+        source="unit_test",
+        model="gpt-4o",
+        temperature=0.7,
+        seed=101
+    )
+    cli.cmd_add_chapter(add_args)
+    captured = capsys.readouterr()
+    assert "Chapter c_001 logged." in captured.out
+
+    # 2. Test CLI list-chapters command
+    cli.cmd_list_chapters(None)
+    captured = capsys.readouterr()
+    assert "c_001" in captured.out
+    assert "Initial prompt check" in captured.out
+
+    # 3. Test CLI show-chapter command
+    show_ch_args = argparse.Namespace(chapter_id="c_001")
+    cli.cmd_show_chapter(show_ch_args)
+    captured = capsys.readouterr()
+    assert "Chapter: c_001" in captured.out
+    assert "Actor:   cli_tester" in captured.out
+    assert "Source:  unit_test" in captured.out
+    assert "Model:   gpt-4o" in captured.out
+    assert "Temp:    0.7" in captured.out
+    assert "Seed:    101" in captured.out
+
+    # 4. Test CLI create-book command
+    create_bk_args = argparse.Namespace(
+        title="CLI Integration Book",
+        chapter_ids=["c_001"],
+        feature="CLI Features"
+    )
+    cli.cmd_create_book(create_bk_args)
+    captured = capsys.readouterr()
+    assert "Book b_001 created:" in captured.out
+
+    # 5. Test CLI list-books command
+    cli.cmd_list_books(None)
+    captured = capsys.readouterr()
+    assert "b_001" in captured.out
+    assert "v1" in captured.out
+    assert "CLI Integration Book" in captured.out
+
+    # 6. Test CLI show-book command
+    show_bk_args = argparse.Namespace(book_id="b_001")
+    cli.cmd_show_book(show_bk_args)
+    captured = capsys.readouterr()
+    assert "Book:     b_001" in captured.out
+    assert "Feature:  CLI Features" in captured.out
+
+    # 7. Test CLI new-edition command
+    add_args2 = argparse.Namespace(
+        prompt="Second prompt check",
+        result="Second model result",
+        actor="cli_tester",
+        source="unit_test",
+        model="gpt-4o",
+        temperature=0.7,
+        seed=102
+    )
+    cli.cmd_add_chapter(add_args2)
+    captured = capsys.readouterr()
+    
+    new_ed_args = argparse.Namespace(
+        book_id="b_001",
+        title="CLI Integration Book v2",
+        chapter_ids=["c_001", "c_002"]
+    )
+    cli.cmd_new_edition(new_ed_args)
+    captured = capsys.readouterr()
+    assert "Book b_002 created as v2" in captured.out
+
+    # 8. Test CLI shelf command
+    cli.cmd_shelf(None)
+    captured = capsys.readouterr()
+    assert "LIBRARY SHELF" in captured.out
+    assert "[CLI Features]" in captured.out
+    assert "b_001 v1" in captured.out
+    assert "b_002 v2" in captured.out
+
+    # 9. Test CLI export-book command (JSON format)
+    export_json_args = argparse.Namespace(book_id="b_001", format="json")
+    cli.cmd_export_book(export_json_args)
+    captured = capsys.readouterr()
+    assert '"id": "b_001"' in captured.out
+    assert '"title": "CLI Integration Book"' in captured.out
+
+    # 10. Test CLI export-book command (Markdown format)
+    export_md_args = argparse.Namespace(book_id="b_001", format="markdown")
+    cli.cmd_export_book(export_md_args)
+    captured = capsys.readouterr()
+    assert "# CLI Integration Book" in captured.out
+    assert "**Book ID:** b_001" in captured.out
+
+    # 11. Test CLI search-chapters command
+    search_args = argparse.Namespace(
+        actor="cli_tester",
+        keyword="prompt",
+        after=None,
+        before=None
+    )
+    cli.cmd_search_chapters(search_args)
+    captured = capsys.readouterr()
+    assert "c_001" in captured.out
+    assert "c_002" in captured.out
+
+    # 12. Test CLI diff-books command (including steps semantic diffs!)
+    diff_args = argparse.Namespace(book_a="b_001", book_b="b_002")
+    cli.cmd_diff_books(diff_args)
+    captured = capsys.readouterr()
+    assert "DIFF: b_001 (v1) -> b_002 (v2)" in captured.out
+    assert "STEP-BY-STEP SEMANTIC CHANGES" in captured.out
+    assert "Step 1: c_001 -> c_001 [IDENTICAL]" in captured.out

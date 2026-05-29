@@ -33,10 +33,21 @@ Library
 
 AI workflows are opaque. Prompts go in, results come out, and nobody can trace what happened. AI Audit gives you:
 
-- **Full audit trail** — every prompt, result, actor, and timestamp is immutable
-- **Feature-level versioning** — edits create new editions, old ones are preserved
-- **Human-readable exports** — JSON for machines, Markdown for auditors
-- **Works everywhere** — CLI, REST API, web dashboard, or one-line SDK calls
+- **Visual semantic diffing (v0.2.0)** — side-by-side line-by-line prompt & result diff comparison in both the Web Dashboard and Terminal CLI.
+- **Validation gate telemetry (v0.2.0)** — real-time validation gate pass rates tracked directly on the bookshelf dashboard.
+- **Full audit trail** — every prompt, result, actor, and timestamp is immutable.
+- **Feature-level versioning** — edits create new editions, old ones are preserved.
+- **Human-readable exports** — JSON for machines, Markdown for auditors.
+- **Works everywhere** — CLI, REST API, web dashboard, or one-line SDK calls.
+
+---
+
+## Early Adopters & Metaphor Guide
+
+Trying to understand what this project is really about and how to map it to your MLOps workflow? 
+Read our comprehensive, visual guide:
+
+👉 **[Early Adopters & Metaphor Guide](docs/early-adopters-guide.md)**
 
 ---
 

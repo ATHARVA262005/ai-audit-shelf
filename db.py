@@ -7,7 +7,10 @@ from typing import Optional
 
 from models import Chapter, Book
 
+import threading
+
 DB_PATH = Path(__file__).parent / "audit.db"
+_id_lock = threading.Lock()
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -15,6 +18,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")  # Graceful write contention wait
     return conn
 
 
@@ -54,6 +58,10 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             name TEXT PRIMARY KEY,
             value INTEGER DEFAULT 0
         );
+
+        CREATE INDEX IF NOT EXISTS idx_chapters_actor ON chapters(actor);
+        CREATE INDEX IF NOT EXISTS idx_chapters_timestamp ON chapters(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_books_feature ON books(feature);
     """)
     
     # Run dynamic schema migrations for existing databases
@@ -86,18 +94,22 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
 
 
 def next_id(conn: sqlite3.Connection, prefix: str) -> str:
-    """Generate next sequential ID like c_001, b_002."""
-    conn.execute(
-        "UPDATE counters SET value = value + 1 WHERE name = ?",
-        (prefix,),
-    )
-    row = conn.execute(
-        "SELECT value FROM counters WHERE name = ?", (prefix,)
-    ).fetchone()
-    return f"{prefix[0]}_{row['value']:03d}"
+    """Generate next sequential ID like c_001, b_002 with race-condition thread safety."""
+    with _id_lock:
+        # Wrap in transaction block to guarantee exclusive atomic locks
+        with conn:
+            conn.execute(
+                "UPDATE counters SET value = value + 1 WHERE name = ?",
+                (prefix,),
+            )
+            row = conn.execute(
+                "SELECT value FROM counters WHERE name = ?", (prefix,)
+            ).fetchone()
+            return f"{prefix[0]}_{row['value']:03d}"
 
 
 # --- Chapter operations ---
+
 
 def save_chapter(chapter: Chapter, conn: sqlite3.Connection):
     conn.execute(
