@@ -31,10 +31,10 @@ def cmd_add_chapter(args):
 
 
 def cmd_list_chapters(args):
-    """List all chapters."""
+    limit = getattr(args, 'limit', None)
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
-        chapters = list_chapters(conn)
+        chapters = list_chapters(conn, limit=limit)
     if not chapters:
         print("No chapters yet.")
         return
@@ -97,10 +97,10 @@ def cmd_create_book(args):
 
 
 def cmd_list_books(args):
-    """List all books (the bookshelf)."""
+    limit = getattr(args, 'limit', None)
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
-        books = list_books(conn)
+        books = list_books(conn, limit=limit)
     if not books:
         print("Bookshelf is empty.")
         return
@@ -374,6 +374,8 @@ def main():
 
     # list-chapters
     p = sub.add_parser("list-chapters", help="List all chapters")
+    p.add_argument("--limit", type=int, default=None, metavar="N",
+               help="Show only the N most recent chapters")
     p.set_defaults(func=cmd_list_chapters)
 
     # show-chapter
@@ -390,6 +392,8 @@ def main():
 
     # list-books
     p = sub.add_parser("list-books", help="List all books")
+    p.add_argument("--limit", type=int, default=None, metavar="N",
+               help="Show only the N most recent books")
     p.set_defaults(func=cmd_list_books)
 
     # show-book
