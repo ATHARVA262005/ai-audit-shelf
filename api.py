@@ -79,6 +79,13 @@ app = FastAPI(
     version="0.2.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 import hmac
 
@@ -482,6 +489,57 @@ def api_new_edition(
 
 
 # --- Export & Diff ---
+@app.get("/export/chapters", dependencies=[Depends(verify_read_api_key)])
+def api_export_chapters(
+    actor: Optional[str] = None,
+    after: Optional[str] = None,
+    conn=Depends(get_db),
+):
+    """Export all chapters as CSV."""
+
+    chapters = list_chapters(conn)
+
+    if actor:
+        chapters = [
+            ch for ch in chapters
+            if ch.actor.lower() == actor.lower()
+        ]
+
+    if after:
+        chapters = [
+            ch for ch in chapters
+            if ch.timestamp >= after
+        ]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "id",
+        "actor",
+        "source",
+        "timestamp",
+        "prompt",
+        "result"
+    ])
+
+    for ch in chapters:
+        writer.writerow([
+            ch.id,
+            ch.actor,
+            ch.source,
+            ch.timestamp,
+            ch.prompt,
+            ch.result
+        ])
+
+    return PlainTextResponse(
+        output.getvalue(),
+        media_type="text/csv"
+    )
+
+
+
 @app.get("/export/book/{book_id}", dependencies=[Depends(verify_read_api_key)])
 def api_export_book(
     book_id: str,

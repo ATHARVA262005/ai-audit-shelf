@@ -488,8 +488,20 @@ function renderBooks() {
 
 function renderChapters() {
   let html = `
-    <div class="page-header"><h2>Chapters</h2><p>Every atomic AI action logged in the system</p></div>
-    <div class="table-wrap"><table>
+  <div class="page-header">
+    <h2>Chapters</h2>
+    <p>Every atomic AI action logged in the system</p>
+
+    <div class="action-bar" style="margin-top:10px;">
+      <a class="btn btn-primary"
+         href="${getApiUrl()}/export/chapters"
+         target="_blank">
+         Export CSV
+      </a>
+    </div>
+  </div>
+
+  <div class="table-wrap"><table>
       <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Validation</th><th>Prompt</th></tr></thead><tbody>`;
   chaptersData.forEach(ch => {
     const valBadge = ch.validation_status 
@@ -681,6 +693,7 @@ async function showBookDetail(bookId) {
     <div class="action-bar">
       <a class="btn btn-primary" href="${getApiUrl()}/export/book/${escapeAttr(book.id)}?format=markdown" target="_blank">Export Markdown</a>
       <a class="btn" href="${getApiUrl()}/export/book/${escapeAttr(book.id)}?format=json" target="_blank">Export JSON</a>
+      <a class="btn" href="${getApiUrl()}/export/book/${escapeAttr(book.id)}?format=csv" target="_blank">Export CSV</a>
     </div>`;
 
   const panel = document.getElementById('bookDetail');
