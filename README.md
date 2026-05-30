@@ -11,7 +11,12 @@ Repository: [github.com/ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA
 > ⭐️ **If you find this project useful, please consider giving it a star!**  
 > [ATHARVA262005/ai-audit-shelf](https://github.com/ATHARVA262005/ai-audit-shelf)
 
+[![Stars](https://img.shields.io/github/stars/ATHARVA262005/ai-audit-shelf?style=flat&color=yellow)](https://github.com/ATHARVA262005/ai-audit-shelf/stargazers)
+[![Forks](https://img.shields.io/github/forks/ATHARVA262005/ai-audit-shelf?style=flat)](https://github.com/ATHARVA262005/ai-audit-shelf/network/members)
 [![Issues](https://img.shields.io/github/issues/ATHARVA262005/ai-audit-shelf.svg)](https://github.com/ATHARVA262005/ai-audit-shelf/issues)
+[![Contributors](https://img.shields.io/github/contributors/ATHARVA262005/ai-audit-shelf?color=blue)](https://github.com/ATHARVA262005/ai-audit-shelf/graphs/contributors)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![GSSoC 2026](https://img.shields.io/badge/GSSoC-2026-orange)](https://gssoc.girlscript.tech/)
 
 ```
 Library
@@ -28,10 +33,21 @@ Library
 
 AI workflows are opaque. Prompts go in, results come out, and nobody can trace what happened. AI Audit gives you:
 
-- **Full audit trail** — every prompt, result, actor, and timestamp is immutable
-- **Feature-level versioning** — edits create new editions, old ones are preserved
-- **Human-readable exports** — JSON for machines, Markdown for auditors
-- **Works everywhere** — CLI, REST API, web dashboard, or one-line SDK calls
+- **Visual semantic diffing (v0.2.0)** — side-by-side line-by-line prompt & result diff comparison in both the Web Dashboard and Terminal CLI.
+- **Validation gate telemetry (v0.2.0)** — real-time validation gate pass rates tracked directly on the bookshelf dashboard.
+- **Full audit trail** — every prompt, result, actor, and timestamp is immutable.
+- **Feature-level versioning** — edits create new editions, old ones are preserved.
+- **Human-readable exports** — JSON for machines, Markdown for auditors.
+- **Works everywhere** — CLI, REST API, web dashboard, or one-line SDK calls.
+
+---
+
+## Early Adopters & Metaphor Guide
+
+Trying to understand what this project is really about and how to map it to your MLOps workflow? 
+Read our comprehensive, visual guide:
+
+👉 **[Early Adopters & Metaphor Guide](docs/early-adopters-guide.md)**
 
 ---
 
@@ -540,61 +556,24 @@ export async function POST(req: Request) {
 ---
 
 ### Shell Script
+AI Audit Shelf is built to be extremely lightweight and integrate with any AI stack in a few lines of code. 
 
-```bash
-#!/bin/bash
-# audit-wrap.sh — wrap any command and log its execution
+All detailed, copy-pasteable integration recipes have been consolidated into our dedicated documentation:
 
-API="http://localhost:8000"
-ACTOR="${AUDIT_ACTOR:-shell}"
-PROMPT="$1"
-shift
-RESULT=$("$@" 2>&1)
-EXIT_CODE=$?
+👉 **[View Integration Recipes Guide](docs/integration-recipes.md)**
 
-# Log to audit server
-CHAPTER_ID=$(curl -s -X POST "$API/chapter" \
-  --data-urlencode "prompt=$PROMPT" \
-  --data-urlencode "result=$RESULT" \
-  --data-urlencode "actor=$ACTOR" \
-  --data-urlencode "source=shell" \
-  | python -c "import sys,json; print(json.load(sys.stdin)['chapter']['id'])")
+Inside, you will find complete, typed examples for:
 
-echo "Audit: $CHAPTER_ID (exit $EXIT_CODE)"
-exit $EXIT_CODE
-```
-
-Usage:
-
-```bash
-# Wrap any command
-./audit-wrap.sh "Deploy to staging" ./deploy.sh staging
-./audit-wrap.sh "Run test suite" pytest tests/
-
-# Set a custom actor
-AUDIT_ACTOR="ci-bot" ./audit-wrap.sh "Build release" make build
-```
+* 🐍 **[Python (requests)](docs/integration-recipes.md#python--requests-general-frameworks)** — Simple API wrapper for custom scripts and general frameworks.
+* 🦜 **[LangChain Callback Handler](docs/integration-recipes.md#langchain--callback-handler)** — Automatically log all prompt generations and tool executions within LangChain agents.
+* 🦙 **[LlamaIndex Callback Handler](docs/integration-recipes.md#llamaindex--callback-handler)** — Track retrieval, query pipelines, and response synthesis without indexing noise.
+* 🤖 **[OpenAI Function Calls](docs/integration-recipes.md#openai--function-calls)** — Log direct completions and function calls cleanly.
+* ⚡ **[Vercel AI SDK (Next.js)](docs/integration-recipes.md#vercel-ai-sdk--nextjs-app-router)** — A streaming Next.js App Router API endpoint with a background `onFinish` logging callback.
+* 🐚 **[Shell Command Wrapper](docs/integration-recipes.md#shell-script--command-wrapper)** — Audit terminal commands, python scripts, and deployment steps.
+* 🌐 **[curl / REST Reference](docs/integration-recipes.md#curl-any-language)** — Quick API examples for any other language.
 
 ---
 
-### curl (any language)
-
-```bash
-# Log a chapter
-curl -X POST "http://localhost:8000/chapter" \
-  -G \
-  --data-urlencode "prompt=Analyze customer churn" \
-  --data-urlencode "result=Churn rate: 4.2%, down from 5.1%" \
-  --data-urlencode "actor=data-agent" \
-  --data-urlencode "source=custom"
-
-# Create a book (title/feature as query params, chapter_ids as JSON body)
-curl -X POST "http://localhost:8000/book?title=Churn%20Analysis%20Q1&feature=Analytics" \
-  -H "Content-Type: application/json" \
-  -d '["c_001", "c_002", "c_003"]'
-```
-
----
 
 ## Project Structure
 
@@ -633,24 +612,66 @@ Full interactive docs at `http://localhost:8000/docs` when the server is running
 
 ---
 
+## Contributors
+
+Thanks to everyone who has contributed to this project! 🎉
+
+[![Contributors](https://contrib.rocks/image?repo=ATHARVA262005/ai-audit-shelf)](https://github.com/ATHARVA262005/ai-audit-shelf/graphs/contributors)
+
+---
+
+## Roadmap
+
+We are actively developing the next version of AI Audit Shelf, focusing heavily on **reproducibility** and **agent pipeline safety**. Here is what we are building next (inspired directly by community feedback!):
+
+* 🧪 **First-Class Reproducibility Parameters:** First-class database support for tracking generation metadata (`model_version`, `temperature`, `seed`, `top_p`) so prompt differences are deterministic.
+* 🛑 **Verification & Validation Gates:** Integration of synchronous and asynchronous validation callbacks (hooks) to halt execution flows and flag errors before prompt drift propagates downstream.
+* 🔗 **Contextual Session Tracking:** Automatic linking of prompt versions directly to the originating user `session_id` or failing execution context.
+* 📦 **Docker Support:** Containerized deployment templates for single-command self-hosting.
+
+Want to help shape these features? Join the discussion on our [Issues tracker](https://github.com/ATHARVA262005/ai-audit-shelf/issues)!
+
+---
+
 ## Contributing
 
-Contributions, bug reports, ideas, and feature requests are welcome!
 
-- [Open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) to report bugs or suggest new features.
-- Make a pull request for fixes or improvements.
-- Star the repo if you like it!
+All contributions are welcome — from fixing a typo to adding a full integration recipe.
 
-If you have questions, open a discussion or contact [@ATHARVA262005](https://github.com/ATHARVA262005).
+### Ways to contribute
 
-For larger contributions, please [open an issue](https://github.com/ATHARVA262005/ai-audit-shelf/issues) first to discuss your idea.
+| Type | How |
+|---|---|
+| 🐛 Bug fix | Open an issue, then a PR |
+| 📖 Docs / Recipe | Add an integration example to the README |
+| ✨ Feature | Open an issue first to discuss |
+| ⭐ No code? | Star the repo — it helps more people find it |
 
+### Good first issues
+
+Looking for a place to start? Check the [`good first issue`](https://github.com/ATHARVA262005/ai-audit-shelf/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) label — these are small, well-defined tasks perfect for first-time contributors.
+
+### How to submit a PR
+
+```bash
+# 1. Fork the repo and clone your fork
+git clone https://github.com/<your-username>/ai-audit-shelf
+cd ai-audit-shelf
+
+# 2. Create a branch
+git checkout -b feat/your-feature-name
+
+# 3. Make your changes and commit
+git commit -m "feat: describe your change"
+
+# 4. Push and open a PR against main
+git push origin feat/your-feature-name
 ```
-```
+
+For questions, open a [discussion](https://github.com/ATHARVA262005/ai-audit-shelf/discussions) or reach out to [@ATHARVA262005](https://github.com/ATHARVA262005).
+
+---
 
 ## License
 
 MIT — see [LICENSE](LICENSE)
-
-```
-

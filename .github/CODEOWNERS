@@ -1,0 +1,19 @@
+# CODEOWNERS
+# These owners are automatically requested for review on every PR.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owner — ATHARVA262005 reviews all PRs by default
+* @ATHARVA262005
+
+# Core backend files — extra attention
+api.py @ATHARVA262005
+db.py @ATHARVA262005
+models.py @ATHARVA262005
+
+# Frontend
+dashboard.html @ATHARVA262005
+
+# Docs — anyone can contribute but owner reviews
+README.md @ATHARVA262005
+CONTRIBUTING.md @ATHARVA262005
+docs/ @ATHARVA262005
