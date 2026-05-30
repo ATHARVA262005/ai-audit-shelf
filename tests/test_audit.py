@@ -228,7 +228,10 @@ def test_api_add_and_list_chapters():
     # 2. Get list of chapters
     response = client.get("/chapters")
     assert response.status_code == 200
-    chapters = response.json()
+    res = response.json()
+    assert res["page"] == 1
+    assert res["total"] == 1
+    chapters = res["data"]
     assert len(chapters) == 1
     assert chapters[0]["id"] == "c_001"
     assert chapters[0]["model"] == "gpt-3.5-turbo"
@@ -302,6 +305,14 @@ def test_api_create_and_version_books():
     assert new_book["id"] == "b_002"
     assert new_book["version"] == 2
     assert new_book["parent_book_id"] == "b_001"
+
+    # 3b. Verify books pagination response shape
+    response = client.get("/books")
+    assert response.status_code == 200
+    books_res = response.json()
+    assert "data" in books_res
+    assert books_res["total"] == 2
+    assert len(books_res["data"]) == 2
 
     # 4. Check library shelf endpoint
     response = client.get("/shelf")
@@ -451,21 +462,23 @@ def test_api_pagination():
             json={"prompt": f"Prompt {i}", "result": f"Result {i}", "actor": "PaginationTester"}
         )
 
-    # 1. Test limit of 2 chapters
-    response = client.get("/chapters", params={"limit": 2})
+   # 1. Test page 1 with limit 2
+    response = client.get("/chapters", params={"page": 1, "limit": 2})
     assert response.status_code == 200
     res = response.json()
-    assert len(res) == 2
+    assert res["page"] == 1
+    assert res["limit"] == 2
+    assert res["total"] >= 5  # at least the 5 we seeded
+    assert len(res["data"]) == 2
 
-    # 2. Test offset
-    response = client.get("/chapters", params={"limit": 2, "offset": 2})
+    # 2. Test page 2 with limit 2
+    response = client.get("/chapters", params={"page": 2, "limit": 2})
     assert response.status_code == 200
-    res_offset = response.json()
-    assert len(res_offset) == 2
-    # Ensure they are different
-    assert res[0]["id"] != res_offset[0]["id"]
+    res_page2 = response.json()
+    assert len(res_page2["data"]) == 2
+    assert res["data"][0]["id"] != res_page2["data"][0]["id"]
 
-    # 3. Test search pagination
+    # 3. Test search pagination (search endpoint unchanged, still returns list)
     response = client.get("/search/chapters", params={"actor": "PaginationTester", "limit": 2, "offset": 1})
     assert response.status_code == 200
     assert len(response.json()) == 2
@@ -481,7 +494,7 @@ def test_redos_regex_timeout():
     # We query the validate endpoint on c_004 (or the new chapter ID)
     # Find latest logged chapter ID first
     latest_chapters = client.get("/chapters", params={"limit": 1}).json()
-    latest_id = latest_chapters[0]["id"]
+    latest_id = latest_chapters["data"][0]["id"]
 
     response = client.post(
         f"/chapter/{latest_id}/validate",

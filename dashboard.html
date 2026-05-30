@@ -399,10 +399,12 @@ function showError(message) {
 
 async function loadAll() {
   const activeApi = getApiUrl();
-  [booksData, chaptersData] = await Promise.all([
-    fetchJSON(`${activeApi}/books`),
-    fetchJSON(`${activeApi}/chapters`),
+  const [booksResp, chaptersResp] = await Promise.all([
+    fetchJSON(`${activeApi}/books?limit=100`),
+    fetchJSON(`${activeApi}/chapters?limit=100`),
   ]);
+  booksData = booksResp.data;
+  chaptersData = chaptersResp.data;
 }
 
 async function loadAndRender() {

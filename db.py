@@ -155,8 +155,18 @@ def get_chapter(chapter_id: str, conn: sqlite3.Connection) -> Optional[Chapter]:
     )
 
 
-def list_chapters(conn: sqlite3.Connection) -> list[Chapter]:
-    rows = conn.execute("SELECT * FROM chapters ORDER BY timestamp DESC").fetchall()
+def count_chapters(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) AS total FROM chapters").fetchone()["total"]
+
+
+def list_chapters(conn: sqlite3.Connection, limit: Optional[int] = None, offset: int = 0) -> list[Chapter]:
+    if limit is not None:
+        rows = conn.execute(
+            "SELECT * FROM chapters ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM chapters ORDER BY timestamp DESC").fetchall()
     return [
         Chapter(
             id=r["id"],
@@ -174,8 +184,6 @@ def list_chapters(conn: sqlite3.Connection) -> list[Chapter]:
         )
         for r in rows
     ]
-
-
 
 
 
@@ -217,8 +225,18 @@ def get_book(book_id: str, conn: sqlite3.Connection) -> Optional[Book]:
     )
 
 
-def list_books(conn: sqlite3.Connection) -> list[Book]:
-    rows = conn.execute("SELECT * FROM books ORDER BY created_at").fetchall()
+def count_books(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) AS total FROM books").fetchone()["total"]
+
+
+def list_books(conn: sqlite3.Connection, limit: Optional[int] = None, offset: int = 0) -> list[Book]:
+    if limit is not None:
+        rows = conn.execute(
+            "SELECT * FROM books ORDER BY created_at LIMIT ? OFFSET ?",
+            (limit, offset)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM books ORDER BY created_at").fetchall()
     return [
         Book(
             id=r["id"],
