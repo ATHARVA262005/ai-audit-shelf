@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Union
 from pydantic import BaseModel, Field
 
-from fastapi import FastAPI, HTTPException, Query, Depends, Header, Body
+from fastapi import FastAPI, HTTPException, Query, Depends, Header, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
@@ -150,6 +150,15 @@ def startup_event():
     finally:
         conn.close()
 
+    # Load plugin hooks from AUDIT_HOOKS_DIR if configured
+    import hooks as _hooks
+    hooks_dir = os.environ.get("AUDIT_HOOKS_DIR", "")
+    if hooks_dir:
+        _hooks.load_hooks_from_dir(hooks_dir)
+        logger.info(f"[hooks] Loaded {len(_hooks.CHAPTER_HOOKS)} hook(s) from '{hooks_dir}'")
+    else:
+        logger.info("[hooks] AUDIT_HOOKS_DIR not set — no external hooks loaded.")
+
 
 def get_db():
     """Dependency that provides a thread-safe database connection."""
@@ -167,6 +176,7 @@ def get_db():
 
 @app.post("/chapter", response_model=dict, dependencies=[Depends(verify_write_api_key)])
 def api_add_chapter(
+    background_tasks: BackgroundTasks,
     prompt: Optional[str] = Query(None),
     result: Optional[str] = Query(None),
     actor: str = Query("anonymous"),
@@ -222,6 +232,12 @@ def api_add_chapter(
         validation_message=f_val_msg,
     )
     save_chapter(chapter, conn)
+
+    # Fire registered hooks as a background task — never delays the API response
+    import hooks as _hooks
+    if _hooks.CHAPTER_HOOKS:
+        background_tasks.add_task(_hooks.fire_chapter_hooks, chapter.to_dict())
+
     return {"status": "created", "chapter": chapter.to_dict()}
 
 
