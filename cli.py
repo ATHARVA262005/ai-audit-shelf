@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import os
 import contextlib
 from datetime import datetime, timezone
 
@@ -364,7 +365,7 @@ def main():
     p = sub.add_parser("add-chapter", help="Log a new chapter (atomic AI action)")
     p.add_argument("prompt", help="The prompt/instruction")
     p.add_argument("result", help="The output/result")
-    p.add_argument("--actor", help="Who triggered this action")
+    p.add_argument("--actor", default=os.environ.get("AUDIT_ACTOR", "anonymous"), help="Who triggered this action (defaults to AUDIT_ACTOR env var)")
     p.add_argument("--source", help="Source system (e.g., claude, copilot, manual)")
     p.add_argument("--model", help="Model name or version (e.g. gpt-4o)")
     p.add_argument("--temperature", type=float, help="Generation temperature (e.g. 0.7)")
@@ -416,7 +417,7 @@ def main():
 
     # search-chapters
     p = sub.add_parser("search-chapters", help="Search chapters by actor, keyword, or date range")
-    p.add_argument("--actor", help="Filter by actor name")
+    p.add_argument("--actor", default=os.environ.get("AUDIT_ACTOR", None), help="Filter by actor name (defaults to AUDIT_ACTOR env var if set)")
     p.add_argument("--keyword", help="Search in prompt and result text")
     p.add_argument("--after", help="Show chapters after this ISO timestamp")
     p.add_argument("--before", help="Show chapters before this ISO timestamp")
