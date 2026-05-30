@@ -226,3 +226,5 @@ __marimo__/
 
 # Test Databases
 test_audit.db
+
+.env*.local
