@@ -1,0 +1,469 @@
+{
+  "info": {
+    "_postman_id": "f5d023a1-7bba-4e9b-9c76-20d4fbb1c7a8",
+    "name": "AI Audit REST API",
+    "description": "Comprehensive Postman collection for the AI Audit Shelf REST API.\n\nAI Audit Shelf is a lightweight, Git-like versioning system for AI workflows (prompts, responses, generation parameters, validation gates, and versioned features organized as 'books' and 'chapters').\n\n### Quick Start\n1. Run the API server locally: `python api.py`\n2. Set the `base_url` variable to match your server host (default: `http://localhost:8000`).\n3. If authentication is enabled (by setting `AUDIT_API_KEY=your_key`), set the `api_key` collection variable to your secret key. The requests are already pre-configured to send `X-API-Key` automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Chapters",
+      "description": "Endpoints relating to individual 'chapters'. Chapters represent individual AI actions, storing prompt inputs, model outputs, execution metadata, and validation gate details.",
+      "item": [
+        {
+          "name": "Log Chapter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for write operations (configured via AUDIT_API_KEY on the server)."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Summarize the annual marketing report for Q1\",\n  \"result\": \"Q1 marketing campaign was highly successful, driving 20% growth in organic traffic and generating 1,500 new qualified leads.\",\n  \"actor\": \"marketing-agent\",\n  \"source\": \"claude-3-5-sonnet\",\n  \"model\": \"claude-3.5-sonnet-v2\",\n  \"temperature\": 0.5,\n  \"seed\": 1337,\n  \"validation_status\": \"passed\",\n  \"validation_message\": \"Output matches tone requirements and is syntactically sound.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chapter",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chapter"
+              ]
+            },
+            "description": "Log a new chapter (atomic AI action) in the database. Can accept values via JSON request body (recommended) or query parameter fallback for older implementations."
+          },
+          "response": []
+        },
+        {
+          "name": "List Chapters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key (required for reads if LOCKDOWN_READS is true or if AUDIT_READ_API_KEY is configured)."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/chapters?limit=100&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chapters"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Memory-safe limit for pagination (minimum: 1, maximum: 1000)."
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of chapters to skip before beginning to return results."
+                }
+              ]
+            },
+            "description": "List all logged chapters ordered by timestamp descending, complete with paginated limit/offset boundaries."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Chapter by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/chapter/:chapter_id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chapter",
+                ":chapter_id"
+              ],
+              "variable": [
+                {
+                  "key": "chapter_id",
+                  "value": "{{chapter_id}}",
+                  "description": "The unique ID of the target chapter (e.g. c_001)."
+                }
+              ]
+            },
+            "description": "Retrieve the full metadata, payload, and audit parameters of a single chapter by its ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Chapters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search/chapters?actor=marketing-agent&keyword=marketing&limit=100&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "search",
+                "chapters"
+              ],
+              "query": [
+                {
+                  "key": "actor",
+                  "value": "marketing-agent",
+                  "description": "Filter by the specific actor who logged the chapters (case-insensitive)."
+                },
+                {
+                  "key": "keyword",
+                  "value": "marketing",
+                  "description": "Search keyword found in either the prompt or the generated result payload."
+                },
+                {
+                  "key": "after",
+                  "value": "2026-05-01T00:00:00Z",
+                  "description": "Retrieve chapters logged after this ISO-8601 UTC timestamp string.",
+                  "disabled": true
+                },
+                {
+                  "key": "before",
+                  "value": "2026-05-31T23:59:59Z",
+                  "description": "Retrieve chapters logged before this ISO-8601 UTC timestamp string.",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Pagination limit."
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Pagination offset."
+                }
+              ]
+            },
+            "description": "Search and filter through the logged chapters list using actor name, keyword substring search, and ISO date ranges."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Books",
+      "description": "Endpoints relating to 'books'. Books allow you to bundle multiple chapters (steps) under versioned feature labels.",
+      "item": [
+        {
+          "name": "Create Book",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for write operations."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Q1 Marketing Campaign\",\n  \"chapter_ids\": [\n    \"c_001\"\n  ],\n  \"feature\": \"Marketing\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "book"
+              ]
+            },
+            "description": "Bundle a list of sequential chapter IDs into a versioned 'book' associated with a specific feature."
+          },
+          "response": []
+        },
+        {
+          "name": "List Books",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/books",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "books"
+              ]
+            },
+            "description": "List all versioned books that exist on the shelf."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Book by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/book/:book_id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "book",
+                ":book_id"
+              ],
+              "variable": [
+                {
+                  "key": "book_id",
+                  "value": "{{book_id}}",
+                  "description": "The unique ID of the target book (e.g. b_001)."
+                }
+              ]
+            },
+            "description": "Retrieve the full metadata, chapter association list, and versioning trail of a single book by its ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Book Edition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for write operations."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Q1 Marketing Campaign - Edition 2\",\n  \"chapter_ids\": [\n    \"c_001\",\n    \"c_002\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/book/:book_id/edition",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "book",
+                ":book_id",
+                "edition"
+              ],
+              "variable": [
+                {
+                  "key": "book_id",
+                  "value": "{{book_id}}",
+                  "description": "The ID of the parent book to base this new version/edition on."
+                }
+              ]
+            },
+            "description": "Create a new edition (version bump) of an existing book. The new book maintains a permanent link back to the parent book ID for easy audit trail tracking."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Shelf",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/shelf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "shelf"
+              ]
+            },
+            "description": "Retrieve the library bookshelf view, where books are automatically categorized and grouped by their feature name tags."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Export & Diff",
+      "description": "Auditing and analytics endpoints to export books in multiple human-readable formats or generate side-by-side semantic differences.",
+      "item": [
+        {
+          "name": "Export Book",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/export/book/:book_id?format=json",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "export",
+                "book",
+                ":book_id"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "json",
+                  "description": "Format to export in: 'json' (full payload representation) or 'markdown' (human-readable report formatting)."
+                }
+              ],
+              "variable": [
+                {
+                  "key": "book_id",
+                  "value": "{{book_id}}",
+                  "description": "The unique ID of the book to export."
+                }
+              ]
+            },
+            "description": "Export a book and all its composite chapters in the specified format for easy distribution, sharing, or offline audit record keeping."
+          },
+          "response": []
+        },
+        {
+          "name": "Diff Two Books",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text",
+                "description": "Authentication key for read operations."
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/diff/books?id_a={{book_id_a}}&id_b={{book_id_b}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "diff",
+                "books"
+              ],
+              "query": [
+                {
+                  "key": "id_a",
+                  "value": "{{book_id_a}}",
+                  "description": "ID of the first book to compare."
+                },
+                {
+                  "key": "id_b",
+                  "value": "{{book_id_b}}",
+                  "description": "ID of the second book to compare."
+                }
+              ]
+            },
+            "description": "Compare two books side by side. Displays kept, added, and removed chapter structures, as well as a line-by-line semantic diff of changes between prompts and results."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL of the running AI Audit Shelf REST API server."
+    },
+    {
+      "key": "api_key",
+      "value": "secret123",
+      "type": "string",
+      "description": "The authorization secret API key configured in the AUDIT_API_KEY environment variable on the server."
+    },
+    {
+      "key": "chapter_id",
+      "value": "c_001",
+      "type": "string",
+      "description": "Target ID of a logged chapter to query."
+    },
+    {
+      "key": "book_id",
+      "value": "b_001",
+      "type": "string",
+      "description": "Target ID of a created book to query."
+    },
+    {
+      "key": "book_id_a",
+      "value": "b_001",
+      "type": "string",
+      "description": "The first book ID for comparison diffs."
+    },
+    {
+      "key": "book_id_b",
+      "value": "b_002",
+      "type": "string",
+      "description": "The second book ID for comparison diffs."
+    }
+  ]
+}
