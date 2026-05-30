@@ -100,7 +100,8 @@ def api_search_chapters(
         kw = keyword.lower()
         results = [ch for ch in results if kw in ch.prompt.lower() or kw in ch.result.lower()]
     if after:
-        results = [ch for ch in results if ch.timestamp >= after]
+        after_normalized = after[:19]
+        results = [ch for ch in results if ch.timestamp[:19] >= after_normalized]
     if before:
         results = [ch for ch in results if ch.timestamp <= before]
     return [ch.to_dict() for ch in results]

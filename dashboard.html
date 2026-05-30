@@ -462,7 +462,7 @@ async function runSearch() {
   const after = document.getElementById('sAfter').value;
   if (actor) params.set('actor', actor);
   if (keyword) params.set('keyword', keyword);
-  if (after) params.set('after', after + 'T00:00:00');
+  if (after) params.set('after', new Date(after + 'T00:00:00').toISOString());
 
   const results = await fetchJSON(`${API}/search/chapters?${params}`);
   let html = '';
