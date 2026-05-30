@@ -1,5 +1,7 @@
 __pycache__/
 audit.db
+audit.db-shm
+audit.db-wal
 *.pyc
 .claude/
 

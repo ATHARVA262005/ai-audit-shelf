@@ -14,8 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from models import Chapter, Book
-from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
-
+from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, count_chapters, save_book, get_book, list_books, count_books
 
 class ChapterCreate(BaseModel):
     prompt: str = Field(..., max_length=50000)
@@ -291,36 +290,22 @@ def api_validate_chapter(
     }
 
 
-@app.get("/chapters", response_model=list[dict], dependencies=[Depends(verify_read_api_key)])
+@app.get("/chapters", response_model=dict, dependencies=[Depends(verify_read_api_key)])
 def api_list_chapters(
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=1000),
     conn=Depends(get_db)
 ):
-    """List all chapters with memory-safe limit and offset pagination."""
-    # SQLite offset pagination fallback
-    rows = conn.execute(
-        "SELECT * FROM chapters ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-        (limit, offset)
-    ).fetchall()
-    return [
-        Chapter(
-            id=r["id"],
-            prompt=r["prompt"],
-            result=r["result"],
-            actor=r["actor"],
-            timestamp=r["timestamp"],
-            source=r["source"],
-            model=r["model"],
-            temperature=r["temperature"],
-            seed=r["seed"],
-            validation_status=r["validation_status"],
-            validation_message=r["validation_message"],
-            metadata=json.loads(r["metadata"]),
-        ).to_dict()
-        for r in rows
-    ]
-
+    """List chapters with page-based pagination and total count metadata."""
+    offset = (page - 1) * limit
+    chapters = list_chapters(conn, limit=limit, offset=offset)
+    total = count_chapters(conn)
+    return {
+        "data": [ch.to_dict() for ch in chapters],
+        "page": page,
+        "limit": limit,
+        "total": total,
+    }
 
 @app.get("/chapter/{chapter_id}", response_model=dict, dependencies=[Depends(verify_read_api_key)])
 def api_get_chapter(chapter_id: str, conn=Depends(get_db)):
@@ -424,11 +409,22 @@ def api_create_book(
     return {"status": "created", "book": book.to_dict()}
 
 
-@app.get("/books", response_model=list[dict], dependencies=[Depends(verify_read_api_key)])
-def api_list_books(conn=Depends(get_db)):
-    """List all books (authenticated)."""
-    return [b.to_dict() for b in list_books(conn)]
-
+@app.get("/books", response_model=dict, dependencies=[Depends(verify_read_api_key)])
+def api_list_books(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=1000),
+    conn=Depends(get_db)
+):
+    """List books with page-based pagination and total count metadata."""
+    offset = (page - 1) * limit
+    books = list_books(conn, limit=limit, offset=offset)
+    total = count_books(conn)
+    return {
+        "data": [b.to_dict() for b in books],
+        "page": page,
+        "limit": limit,
+        "total": total,
+    }
 
 @app.get("/book/{book_id}", response_model=dict, dependencies=[Depends(verify_read_api_key)])
 def api_get_book(book_id: str, conn=Depends(get_db)):
