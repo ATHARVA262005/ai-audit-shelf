@@ -317,7 +317,7 @@
 <div class="sidebar">
   <div class="sidebar-header">
     <h1>AI Audit</h1>
-    <p>Git for AI workflows</p>
+    <p>Git for AI workflows — v0.2.0</p>
   </div>
   <div class="nav">
     <div class="nav-item active" data-page="shelf"><span class="nav-icon">&#x1f4da;</span> Library</div>
@@ -342,33 +342,82 @@ function getApiUrl() {
   return (localStorage.getItem('api_url') || 'http://localhost:8000').replace(/\/+$/, '');
 }
 
-const API = getApiUrl();
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/'/g, '&#39;');
+}
+
 let booksData = [];
 let chaptersData = [];
 
 async function fetchJSON(url) {
-  const r = await fetch(url);
-  return r.json();
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      throw new Error(`HTTP error! status: ${r.status}`);
+    }
+    return await r.json();
+  } catch (err) {
+    console.error("Fetch failed for URL:", url, err);
+    throw err;
+  }
 }
 
 (function initApiConfig() {
   const input = document.getElementById('apiUrl');
   const saved = document.getElementById('apiSaved');
-  input.value = API;
+  input.value = getApiUrl();
 
   input.addEventListener('change', () => {
     const url = input.value.replace(/\/+$/, '');
     localStorage.setItem('api_url', url);
     saved.classList.add('show');
     setTimeout(() => saved.classList.remove('show'), 2000);
+    // Reload data with new URL dynamically
+    loadAndRender();
   });
 })();
 
+function showError(message) {
+  document.getElementById('content').innerHTML = `
+    <div style="padding: 24px; text-align: center; max-width: 600px; margin: 40px auto; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 12px; color: var(--red);">
+      <h3 style="margin-top: 0; font-size: 1.25rem; font-weight: 600;">⚠️ Connection Failure</h3>
+      <p style="margin: 12px 0; font-size: 0.95rem; line-height: 1.5; color: var(--text2);">${escapeHtml(message)}</p>
+      <button onclick="loadAndRender()" style="background: var(--red); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: filter 0.2s;" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">Retry Connection</button>
+    </div>
+  `;
+}
+
 async function loadAll() {
+  const activeApi = getApiUrl();
   [booksData, chaptersData] = await Promise.all([
-    fetchJSON(`${API}/books`),
-    fetchJSON(`${API}/chapters`),
+    fetchJSON(`${activeApi}/books`),
+    fetchJSON(`${activeApi}/chapters`),
   ]);
+}
+
+async function loadAndRender() {
+  document.getElementById('content').innerHTML = '<div class="loading">Loading...</div>';
+  try {
+    await loadAll();
+    const activeNav = document.querySelector('.nav-item.active');
+    if (activeNav) {
+      pages[activeNav.dataset.page]();
+    } else {
+      renderShelf();
+    }
+  } catch (err) {
+    showError(`Unable to reach the AI Audit Shelf API at "${getApiUrl()}". Please verify the API is running and CORS allows web access.`);
+  }
 }
 
 // --- Renderers ---
@@ -379,27 +428,39 @@ function renderShelf() {
     (features[b.feature] = features[b.feature] || []).push(b);
   });
 
+  // Calculate dynamic validation pass rate for v0.2.0
+  const validatedChapters = chaptersData.filter(c => c.validation_status);
+  const passedChapters = validatedChapters.filter(c => c.validation_status === 'passed');
+  const passRate = validatedChapters.length > 0 
+    ? Math.round((passedChapters.length / validatedChapters.length) * 100) 
+    : 100;
+
   let html = `
     <div class="page-header"><h2>Library</h2><p>Browse all features organized as a bookshelf</p></div>
     <div class="stats">
       <div class="stat-card"><div class="label">Books</div><div class="value">${booksData.length}</div></div>
       <div class="stat-card"><div class="label">Chapters</div><div class="value">${chaptersData.length}</div></div>
       <div class="stat-card"><div class="label">Features</div><div class="value">${Object.keys(features).length}</div></div>
+      <div class="stat-card"><div class="label">Gate Pass Rate</div><div class="value" style="color: ${passRate >= 80 ? 'var(--green)' : 'var(--yellow)'}">${passRate}%</div></div>
     </div>`;
 
+  if (booksData.length === 0) {
+    html += '<div style="text-align:center; padding:40px; color:var(--text2);">The library shelf is empty. Log your first chapter to get started!</div>';
+  }
+
   for (const [feature, books] of Object.entries(features)) {
-    html += `<div class="shelf-section"><h3>${feature}</h3><div class="card-grid">`;
+    html += `<div class="shelf-section"><h3>${escapeHtml(feature)}</h3><div class="card-grid">`;
     books.forEach(b => {
       html += `
-        <div class="card" onclick="showBookDetail('${b.id}')">
+        <div class="card" onclick="showBookDetail('${escapeAttr(b.id)}')">
           <div class="card-title">
-            ${b.title}
+            ${escapeHtml(b.title)}
             <span class="badge badge-version">v${b.version}</span>
           </div>
           <div class="card-meta">
-            <span>${b.id}</span>
+            <span>${escapeHtml(b.id)}</span>
             <span>${b.chapter_ids.length} chapters</span>
-            ${b.parent_book_id ? `<span>edits ${b.parent_book_id}</span>` : ''}
+            ${b.parent_book_id ? `<span>edits ${escapeHtml(b.parent_book_id)}</span>` : ''}
           </div>
         </div>`;
     });
@@ -414,8 +475,8 @@ function renderBooks() {
     <div class="table-wrap"><table>
       <thead><tr><th>ID</th><th>Title</th><th>Feature</th><th>Version</th><th>Chapters</th><th>Created</th></tr></thead><tbody>`;
   booksData.forEach(b => {
-    html += `<tr onclick="showBookDetail('${b.id}')">
-      <td>${b.id}</td><td>${b.title}</td><td>${b.feature}</td>
+    html += `<tr onclick="showBookDetail('${escapeAttr(b.id)}')">
+      <td>${escapeHtml(b.id)}</td><td>${escapeHtml(b.title)}</td><td>${escapeHtml(b.feature)}</td>
       <td><span class="badge badge-version">v${b.version}</span></td>
       <td>${b.chapter_ids.length}</td><td>${new Date(b.created_at).toLocaleDateString()}</td>
     </tr>`;
@@ -429,12 +490,17 @@ function renderChapters() {
   let html = `
     <div class="page-header"><h2>Chapters</h2><p>Every atomic AI action logged in the system</p></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Prompt</th></tr></thead><tbody>`;
+      <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Validation</th><th>Prompt</th></tr></thead><tbody>`;
   chaptersData.forEach(ch => {
-    html += `<tr onclick="showChapterDetail('${ch.id}')">
-      <td>${ch.id}</td><td>${ch.actor}</td><td>${ch.source}</td>
+    const valBadge = ch.validation_status 
+      ? `<span class="badge" style="background:${ch.validation_status === 'passed' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color:${ch.validation_status === 'passed' ? 'var(--green)' : 'var(--red)'}">${escapeHtml(ch.validation_status.toUpperCase())}</span>`
+      : '<span style="color:var(--text2); font-size:0.85rem;">—</span>';
+
+    html += `<tr onclick="showChapterDetail('${escapeAttr(ch.id)}')">
+      <td>${escapeHtml(ch.id)}</td><td>${escapeHtml(ch.actor)}</td><td>${escapeHtml(ch.source)}</td>
       <td>${new Date(ch.timestamp).toLocaleString()}</td>
-      <td>${ch.prompt.length > 60 ? ch.prompt.slice(0, 60) + '...' : ch.prompt}</td>
+      <td>${valBadge}</td>
+      <td>${escapeHtml(ch.prompt.length > 60 ? ch.prompt.slice(0, 60) + '...' : ch.prompt)}</td>
     </tr>`;
   });
   html += `</tbody></table></div>
@@ -464,28 +530,32 @@ async function runSearch() {
   if (keyword) params.set('keyword', keyword);
   if (after) params.set('after', new Date(after + 'T00:00:00').toISOString());
 
-  const results = await fetchJSON(`${API}/search/chapters?${params}`);
-  let html = '';
-  if (results.length === 0) {
-    html = '<div class="empty"><p>No matching chapters found.</p></div>';
-  } else {
-    html = `<div class="table-wrap"><table>
-      <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Prompt</th></tr></thead><tbody>`;
-    results.forEach(ch => {
-      html += `<tr onclick="showChapterDetail('${ch.id}')">
-        <td>${ch.id}</td><td>${ch.actor}</td><td>${ch.source}</td>
-        <td>${new Date(ch.timestamp).toLocaleString()}</td>
-        <td>${ch.prompt.length > 60 ? ch.prompt.slice(0, 60) + '...' : ch.prompt}</td>
-      </tr>`;
-    });
-    html += `</tbody></table></div>`;
+  try {
+    const results = await fetchJSON(`${getApiUrl()}/search/chapters?${params}`);
+    let html = '';
+    if (results.length === 0) {
+      html = '<div class="empty"><p>No matching chapters found.</p></div>';
+    } else {
+      html = `<div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Actor</th><th>Source</th><th>Timestamp</th><th>Prompt</th></tr></thead><tbody>`;
+      results.forEach(ch => {
+        html += `<tr onclick="showChapterDetail('${escapeAttr(ch.id)}')">
+          <td>${escapeHtml(ch.id)}</td><td>${escapeHtml(ch.actor)}</td><td>${escapeHtml(ch.source)}</td>
+          <td>${new Date(ch.timestamp).toLocaleString()}</td>
+          <td>${escapeHtml(ch.prompt.length > 60 ? ch.prompt.slice(0, 60) + '...' : ch.prompt)}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    html += '<div class="detail-panel" id="chapterDetail"></div>';
+    document.getElementById('searchResults').innerHTML = html;
+  } catch (err) {
+    document.getElementById('searchResults').innerHTML = '<div style="color:var(--red); padding: 12px 0;">Search failed. Please check backend connection.</div>';
   }
-  html += '<div class="detail-panel" id="chapterDetail"></div>';
-  document.getElementById('searchResults').innerHTML = html;
 }
 
 function renderDiff() {
-  let opts = booksData.map(b => `<option value="${b.id}">${b.id} — ${b.title} (v${b.version})</option>`).join('');
+  let opts = booksData.map(b => `<option value="${escapeAttr(b.id)}">${escapeHtml(b.id)} — ${escapeHtml(b.title)} (v${b.version})</option>`).join('');
   let html = `
     <div class="page-header"><h2>Diff</h2><p>Compare two book editions side-by-side</p></div>
     <div class="search-bar">
@@ -502,32 +572,88 @@ function renderDiff() {
 async function runDiff() {
   const a = document.getElementById('diffA').value;
   const b = document.getElementById('diffB').value;
-  const diff = await fetchJSON(`${API}/diff/books?id_a=${a}&id_b=${b}`);
+  try {
+    const diff = await fetchJSON(`${getApiUrl()}/diff/books?id_a=${a}&id_b=${b}`);
 
-  let html = `<div class="detail-panel open">
-    <h3>${diff.book_a.id} (v${diff.book_a.version}) &rarr; ${diff.book_b.id} (v${diff.book_b.version})</h3>`;
+    let html = `<div class="detail-panel open">
+      <h3>${escapeHtml(diff.book_a.id)} (v${diff.book_a.version}) &rarr; ${escapeHtml(diff.book_b.id)} (v${diff.book_b.version})</h3>`;
 
-  if (diff.kept.length === 0 && diff.added.length === 0 && diff.removed.length === 0) {
-    html += '<p style="color:var(--text2)">No differences found.</p>';
-  } else {
-    if (diff.kept.length) {
-      html += `<div class="diff-section"><h4 style="color:var(--accent)">Kept (${diff.kept.length})</h4>`;
-      diff.kept.forEach(ch => { html += `<div class="diff-item diff-kept">= ${ch.id} &mdash; ${ch.prompt}</div>`; });
-      html += '</div>';
+    if (diff.kept.length === 0 && diff.added.length === 0 && diff.removed.length === 0) {
+      html += '<p style="color:var(--text2)">No differences found.</p>';
+    } else {
+      // 1. Structured Delta Summary
+      html += `<div style="display:flex; gap:12px; margin-bottom:24px;">`;
+      if (diff.kept.length) html += `<span class="badge diff-kept">${diff.kept.length} Kept</span>`;
+      if (diff.added.length) html += `<span class="badge diff-added">+ ${diff.added.length} Added</span>`;
+      if (diff.removed.length) html += `<span class="badge diff-removed">- ${diff.removed.length} Removed</span>`;
+      html += `</div>`;
+
+      // 2. Line-by-Line Semantic Diff Comparison (v0.2.0 Killer Feature)
+      if (diff.steps_comparison && diff.steps_comparison.length > 0) {
+        html += `<h4 style="margin: 24px 0 12px; color:var(--accent);">Line-by-Line Semantic Workflow Comparison</h4>`;
+        diff.steps_comparison.forEach(step => {
+          html += `
+            <div class="step-diff-card" style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:16px;">
+              <h5 style="margin-bottom:12px; font-size:13px; display:flex; justify-content:space-between; align-items:center; letter-spacing:0.5px;">
+                <span>STEP ${step.step_number}: ${escapeHtml(step.chapter_a.id)} &rarr; ${escapeHtml(step.chapter_b.id)}</span>
+                ${step.are_identical 
+                  ? '<span class="badge diff-kept">IDENTICAL</span>' 
+                  : '<span class="badge" style="background:rgba(251,191,36,0.1); color:var(--yellow); border: 1px solid rgba(251,191,36,0.2)">MODIFIED</span>'}
+              </h5>
+              <div class="diff-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+                <div>
+                  <div style="font-size:10px; text-transform:uppercase; color:var(--text2); margin-bottom:6px; font-weight:600; letter-spacing:0.5px;">Prompt Delta</div>
+                  <div class="diff-box" style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; font-family:monospace; font-size:11px; max-height:220px; overflow-y:auto; line-height:1.5; white-space:pre-wrap;">
+                    ${renderLinesDiff(step.prompt_diff)}
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:10px; text-transform:uppercase; color:var(--text2); margin-bottom:6px; font-weight:600; letter-spacing:0.5px;">Result Delta</div>
+                  <div class="diff-box" style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; font-family:monospace; font-size:11px; max-height:220px; overflow-y:auto; line-height:1.5; white-space:pre-wrap;">
+                    ${renderLinesDiff(step.result_diff)}
+                  </div>
+                </div>
+              </div>
+            </div>`;
+        });
+      }
+
+      // 3. Simple List lists fallback
+      html += `<div style="margin-top:24px; border-top:1px solid var(--border); padding-top:20px;">`;
+      if (diff.added.length) {
+        html += `<div class="diff-section"><h4 style="color:var(--green)">Added Chapters</h4>`;
+        diff.added.forEach(ch => { html += `<div class="diff-item diff-added">+ ${escapeHtml(ch.id)} &mdash; ${escapeHtml(ch.prompt)}</div>`; });
+        html += '</div>';
+      }
+      if (diff.removed.length) {
+        html += `<div class="diff-section"><h4 style="color:var(--red)">Removed Chapters</h4>`;
+        diff.removed.forEach(ch => { html += `<div class="diff-item diff-removed">- ${escapeHtml(ch.id)} &mdash; ${escapeHtml(ch.prompt)}</div>`; });
+        html += '</div>';
+      }
+      html += `</div>`;
     }
-    if (diff.added.length) {
-      html += `<div class="diff-section"><h4 style="color:var(--green)">Added (${diff.added.length})</h4>`;
-      diff.added.forEach(ch => { html += `<div class="diff-item diff-added">+ ${ch.id} &mdash; ${ch.prompt}</div>`; });
-      html += '</div>';
-    }
-    if (diff.removed.length) {
-      html += `<div class="diff-section"><h4 style="color:var(--red)">Removed (${diff.removed.length})</h4>`;
-      diff.removed.forEach(ch => { html += `<div class="diff-item diff-removed">- ${ch.id} &mdash; ${ch.prompt}</div>`; });
-      html += '</div>';
-    }
+    html += '</div>';
+    document.getElementById('diffResults').innerHTML = html;
+  } catch (err) {
+    document.getElementById('diffResults').innerHTML = `<div style="color:var(--red); padding: 12px 0;">Diff evaluation failed: ${err.message || err}</div>`;
   }
-  html += '</div>';
-  document.getElementById('diffResults').innerHTML = html;
+}
+
+function renderLinesDiff(diffLines) {
+  if (!diffLines || diffLines.length === 0) return '<span style="color:var(--text2)">Empty</span>';
+  return diffLines.map(line => {
+    const prefix = line.slice(0, 2);
+    const text = line.slice(2);
+    if (prefix === '+ ') {
+      return `<div style="color:var(--green); background:rgba(74,222,128,0.06); padding:2px 4px; border-radius:3px; border-left: 2px solid var(--green)">+ ${escapeHtml(text)}</div>`;
+    } else if (prefix === '- ') {
+      return `<div style="color:var(--red); background:rgba(248,113,113,0.06); padding:2px 4px; border-radius:3px; border-left: 2px solid var(--red)">- ${escapeHtml(text)}</div>`;
+    } else if (prefix === '? ') {
+      return '';
+    } else {
+      return `<div style="color:var(--text2); padding:2px 4px; opacity:0.8;">&nbsp;&nbsp;${escapeHtml(text)}</div>`;
+    }
+  }).join('');
 }
 
 // --- Detail views ---
@@ -538,22 +664,23 @@ async function showBookDetail(bookId) {
   const chapters = book.chapter_ids.map(cid => chaptersData.find(c => c.id === cid)).filter(Boolean);
 
   let html = `
-    <h3>${book.title}</h3>
-    <div class="detail-row"><div class="detail-label">Book ID</div><div class="detail-value">${book.id}</div></div>
-    <div class="detail-row"><div class="detail-label">Feature</div><div class="detail-value">${book.feature}</div></div>
+    <h3>${escapeHtml(book.title)}</h3>
+    <div class="detail-row"><div class="detail-label">Book ID</div><div class="detail-value">${escapeHtml(book.id)}</div></div>
+    <div class="detail-row"><div class="detail-label">Feature</div><div class="detail-value">${escapeHtml(book.feature)}</div></div>
+
     <div class="detail-row"><div class="detail-label">Version</div><div class="detail-value"><span class="badge badge-version">v${book.version}</span></div></div>
     <div class="detail-row"><div class="detail-label">Created</div><div class="detail-value">${new Date(book.created_at).toLocaleString()}</div></div>
-    ${book.parent_book_id ? `<div class="detail-row"><div class="detail-label">Parent</div><div class="detail-value">${book.parent_book_id}</div></div>` : ''}
+    ${book.parent_book_id ? `<div class="detail-row"><div class="detail-label">Parent</div><div class="detail-value">${escapeHtml(book.parent_book_id)}</div></div>` : ''}
     <div class="detail-row"><div class="detail-label">Chapters (${chapters.length})</div></div>
     <div class="table-wrap"><table>
       <thead><tr><th>ID</th><th>Actor</th><th>Prompt</th></tr></thead><tbody>`;
   chapters.forEach(ch => {
-    html += `<tr onclick="showChapterDetail('${ch.id}')"><td>${ch.id}</td><td>${ch.actor}</td><td>${ch.prompt}</td></tr>`;
+    html += `<tr onclick="showChapterDetail('${escapeAttr(ch.id)}')"><td>${escapeHtml(ch.id)}</td><td>${escapeHtml(ch.actor)}</td><td>${escapeHtml(ch.prompt)}</td></tr>`;
   });
   html += `</tbody></table></div>
     <div class="action-bar">
-      <a class="btn btn-primary" href="${API}/export/book/${book.id}?format=markdown" target="_blank">Export Markdown</a>
-      <a class="btn" href="${API}/export/book/${book.id}?format=json" target="_blank">Export JSON</a>
+      <a class="btn btn-primary" href="${getApiUrl()}/export/book/${escapeAttr(book.id)}?format=markdown" target="_blank">Export Markdown</a>
+      <a class="btn" href="${getApiUrl()}/export/book/${escapeAttr(book.id)}?format=json" target="_blank">Export JSON</a>
     </div>`;
 
   const panel = document.getElementById('bookDetail');
@@ -566,13 +693,35 @@ async function showChapterDetail(chapterId) {
   const ch = chaptersData.find(c => c.id === chapterId);
   if (!ch) return;
 
+  const reproducibility = (ch.model || ch.temperature !== null || ch.seed !== null) 
+    ? `
+      <div class="detail-row"><div class="detail-label">Model</div><div class="detail-value"><code>${escapeHtml(ch.model || '—')}</code></div></div>
+      <div class="detail-row"><div class="detail-label">Temperature</div><div class="detail-value">${ch.temperature !== null ? ch.temperature : '—'}</div></div>
+      <div class="detail-row"><div class="detail-label">Random Seed</div><div class="detail-value">${ch.seed !== null ? ch.seed : '—'}</div></div>`
+    : '';
+
+  const validation = ch.validation_status
+    ? `
+      <div class="detail-row">
+        <div class="detail-label">Validation Gate</div>
+        <div class="detail-value">
+          <span class="badge" style="background:${ch.validation_status === 'passed' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color:${ch.validation_status === 'passed' ? 'var(--green)' : 'var(--red)'}; font-weight:600;">
+            ${escapeHtml(ch.validation_status.toUpperCase())}
+          </span>
+          <span style="margin-left: 8px; color: var(--text2); font-size:0.9rem;">${escapeHtml(ch.validation_message)}</span>
+        </div>
+      </div>`
+    : '';
+
   let html = `
-    <h3>Chapter ${ch.id}</h3>
-    <div class="detail-row"><div class="detail-label">Actor</div><div class="detail-value">${ch.actor}</div></div>
-    <div class="detail-row"><div class="detail-label">Source</div><div class="detail-value">${ch.source}</div></div>
+    <h3>Chapter ${escapeHtml(ch.id)}</h3>
+    <div class="detail-row"><div class="detail-label">Actor</div><div class="detail-value">${escapeHtml(ch.actor)}</div></div>
+    <div class="detail-row"><div class="detail-label">Source</div><div class="detail-value">${escapeHtml(ch.source)}</div></div>
     <div class="detail-row"><div class="detail-label">Timestamp</div><div class="detail-value">${new Date(ch.timestamp).toLocaleString()}</div></div>
-    <div class="detail-row"><div class="detail-label">Prompt</div><div class="detail-value prompt-block">${ch.prompt}</div></div>
-    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${ch.result}</div></div>`;
+    ${reproducibility}
+    ${validation}
+    <div class="detail-row"><div class="detail-label">Prompt</div><div class="detail-value prompt-block">${escapeHtml(ch.prompt)}</div></div>
+    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${escapeHtml(ch.result)}</div></div>`;
 
   const panel = document.getElementById('chapterDetail');
   panel.innerHTML = html;
@@ -593,7 +742,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 // --- Init ---
-loadAll().then(() => renderShelf());
+loadAndRender();
+
 </script>
 </body>
 </html>

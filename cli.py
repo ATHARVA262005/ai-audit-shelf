@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import contextlib
 from datetime import datetime, timezone
 
 from models import Chapter, Book
@@ -11,28 +12,29 @@ from db import get_connection, init_db, next_id, save_chapter, get_chapter, list
 
 def cmd_add_chapter(args):
     """Log a new chapter (atomic AI action)."""
-    conn = get_connection()
-    init_db(conn)
-    chapter_id = next_id(conn, "chapter")
-    chapter = Chapter(
-        id=chapter_id,
-        prompt=args.prompt,
-        result=args.result,
-        actor=args.actor or "anonymous",
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        source=args.source or "manual",
-    )
-    save_chapter(chapter, conn)
-    conn.close()
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        chapter_id = next_id(conn, "chapter")
+        chapter = Chapter(
+            id=chapter_id,
+            prompt=args.prompt,
+            result=args.result,
+            actor=args.actor or "anonymous",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            source=args.source or "manual",
+            model=args.model,
+            temperature=args.temperature,
+            seed=args.seed,
+        )
+        save_chapter(chapter, conn)
     print(f"Chapter {chapter_id} logged.")
 
 
 def cmd_list_chapters(args):
     """List all chapters."""
-    conn = get_connection()
-    init_db(conn)
-    chapters = list_chapters(conn)
-    conn.close()
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        chapters = list_chapters(conn)
     if not chapters:
         print("No chapters yet.")
         return
@@ -45,10 +47,9 @@ def cmd_list_chapters(args):
 
 def cmd_show_chapter(args):
     """Show details of a specific chapter."""
-    conn = get_connection()
-    init_db(conn)
-    chapter = get_chapter(args.chapter_id, conn)
-    conn.close()
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        chapter = get_chapter(args.chapter_id, conn)
     if chapter is None:
         print(f"Chapter '{args.chapter_id}' not found.")
         return
@@ -56,6 +57,15 @@ def cmd_show_chapter(args):
     print(f"Actor:   {chapter.actor}")
     print(f"Source:  {chapter.source}")
     print(f"Time:    {chapter.timestamp}")
+    if chapter.model:
+        print(f"Model:   {chapter.model}")
+    if chapter.temperature is not None:
+        print(f"Temp:    {chapter.temperature}")
+    if chapter.seed is not None:
+        print(f"Seed:    {chapter.seed}")
+    if chapter.validation_status:
+        status_label = f"[{chapter.validation_status.upper()}]"
+        print(f"Gate:    {status_label} - {chapter.validation_message}")
     print(f"\nPrompt:\n  {chapter.prompt}")
     print(f"\nResult:\n  {chapter.result}")
     if chapter.metadata:
@@ -64,36 +74,33 @@ def cmd_show_chapter(args):
 
 def cmd_create_book(args):
     """Bundle chapters into a book (feature)."""
-    conn = get_connection()
-    init_db(conn)
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
 
-    # Validate chapter IDs exist
-    for cid in args.chapter_ids:
-        if get_chapter(cid, conn) is None:
-            print(f"Error: Chapter '{cid}' not found.")
-            conn.close()
-            return
+        # Validate chapter IDs exist
+        for cid in args.chapter_ids:
+            if get_chapter(cid, conn) is None:
+                print(f"Error: Chapter '{cid}' not found.")
+                return
 
-    book_id = next_id(conn, "book")
-    book = Book(
-        id=book_id,
-        title=args.title,
-        chapter_ids=args.chapter_ids,
-        version=1,
-        feature=args.feature or args.title,
-        created_at=datetime.now(timezone.utc).isoformat(),
-    )
-    save_book(book, conn)
-    conn.close()
+        book_id = next_id(conn, "book")
+        book = Book(
+            id=book_id,
+            title=args.title,
+            chapter_ids=args.chapter_ids,
+            version=1,
+            feature=args.feature or args.title,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        save_book(book, conn)
     print(f"Book {book_id} created: \"{args.title}\" with {len(args.chapter_ids)} chapters.")
 
 
 def cmd_list_books(args):
     """List all books (the bookshelf)."""
-    conn = get_connection()
-    init_db(conn)
-    books = list_books(conn)
-    conn.close()
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        books = list_books(conn)
     if not books:
         print("Bookshelf is empty.")
         return
@@ -105,73 +112,67 @@ def cmd_list_books(args):
 
 def cmd_show_book(args):
     """Show details and chapters of a book."""
-    conn = get_connection()
-    init_db(conn)
-    book = get_book(args.book_id, conn)
-    if book is None:
-        print(f"Book '{args.book_id}' not found.")
-        conn.close()
-        return
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        book = get_book(args.book_id, conn)
+        if book is None:
+            print(f"Book '{args.book_id}' not found.")
+            return
 
-    print(f"Book:     {book.id}")
-    print(f"Title:    {book.title}")
-    print(f"Feature:  {book.feature}")
-    print(f"Version:  {book.version}")
-    print(f"Created:  {book.created_at}")
-    if book.parent_book_id:
-        print(f"Parent:   {book.parent_book_id}")
-    print(f"\nChapters ({len(book.chapter_ids)}):")
-    print("-" * 60)
-    for cid in book.chapter_ids:
-        ch = get_chapter(cid, conn)
-        if ch:
-            prompt_short = ch.prompt[:50] + "..." if len(ch.prompt) > 50 else ch.prompt
-            print(f"  {ch.id:<8} {prompt_short}")
-        else:
-            print(f"  {cid:<8} [missing]")
-    conn.close()
+        print(f"Book:     {book.id}")
+        print(f"Title:    {book.title}")
+        print(f"Feature:  {book.feature}")
+        print(f"Version:  {book.version}")
+        print(f"Created:  {book.created_at}")
+        if book.parent_book_id:
+            print(f"Parent:   {book.parent_book_id}")
+        print(f"\nChapters ({len(book.chapter_ids)}):")
+        print("-" * 60)
+        for cid in book.chapter_ids:
+            ch = get_chapter(cid, conn)
+            if ch:
+                prompt_short = ch.prompt[:50] + "..." if len(ch.prompt) > 50 else ch.prompt
+                print(f"  {ch.id:<8} {prompt_short}")
+            else:
+                print(f"  {cid:<8} [missing]")
 
 
 def cmd_new_edition(args):
     """Create a new edition of a book (version bump with modifications)."""
-    conn = get_connection()
-    init_db(conn)
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
 
-    parent = get_book(args.book_id, conn)
-    if parent is None:
-        print(f"Book '{args.book_id}' not found.")
-        conn.close()
-        return
-
-    # Validate new chapter IDs
-    chapter_ids = args.chapter_ids or parent.chapter_ids
-    for cid in chapter_ids:
-        if get_chapter(cid, conn) is None:
-            print(f"Error: Chapter '{cid}' not found.")
-            conn.close()
+        parent = get_book(args.book_id, conn)
+        if parent is None:
+            print(f"Book '{args.book_id}' not found.")
             return
 
-    new_book_id = next_id(conn, "book")
-    new_book = Book(
-        id=new_book_id,
-        title=args.title or parent.title,
-        chapter_ids=chapter_ids,
-        version=parent.version + 1,
-        feature=parent.feature,
-        created_at=datetime.now(timezone.utc).isoformat(),
-        parent_book_id=parent.id,
-    )
-    save_book(new_book, conn)
-    conn.close()
+        # Validate new chapter IDs
+        chapter_ids = args.chapter_ids or parent.chapter_ids
+        for cid in chapter_ids:
+            if get_chapter(cid, conn) is None:
+                print(f"Error: Chapter '{cid}' not found.")
+                return
+
+        new_book_id = next_id(conn, "book")
+        new_book = Book(
+            id=new_book_id,
+            title=args.title or parent.title,
+            chapter_ids=chapter_ids,
+            version=parent.version + 1,
+            feature=parent.feature,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            parent_book_id=parent.id,
+        )
+        save_book(new_book, conn)
     print(f"Book {new_book_id} created as v{new_book.version} of \"{new_book.title}\" (parent: {parent.id}).")
 
 
 def cmd_shelf(args):
     """Display the library organized by feature."""
-    conn = get_connection()
-    init_db(conn)
-    books = list_books(conn)
-    conn.close()
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        books = list_books(conn)
     if not books:
         print("Library is empty.")
         return
@@ -193,20 +194,18 @@ def cmd_shelf(args):
 
 def cmd_export_book(args):
     """Export a book as JSON or Markdown."""
-    conn = get_connection()
-    init_db(conn)
-    book = get_book(args.book_id, conn)
-    if book is None:
-        print(f"Book '{args.book_id}' not found.")
-        conn.close()
-        return
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        book = get_book(args.book_id, conn)
+        if book is None:
+            print(f"Book '{args.book_id}' not found.")
+            return
 
-    chapters = []
-    for cid in book.chapter_ids:
-        ch = get_chapter(cid, conn)
-        if ch:
-            chapters.append(ch)
-    conn.close()
+        chapters = []
+        for cid in book.chapter_ids:
+            ch = get_chapter(cid, conn)
+            if ch:
+                chapters.append(ch)
 
     if args.format == "json":
         data = {
@@ -237,10 +236,9 @@ def cmd_export_book(args):
 
 def cmd_search_chapters(args):
     """Search chapters by actor, keyword, or date range."""
-    conn = get_connection()
-    init_db(conn)
-    chapters = list_chapters(conn)
-    conn.close()
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        chapters = list_chapters(conn)
 
     results = chapters
     if args.actor:
@@ -265,56 +263,94 @@ def cmd_search_chapters(args):
 
 def cmd_diff_books(args):
     """Compare two book editions — show added/removed/changed chapters."""
-    conn = get_connection()
-    init_db(conn)
-    book_a = get_book(args.book_a, conn)
-    book_b = get_book(args.book_b, conn)
-    if book_a is None:
-        print(f"Book '{args.book_a}' not found.")
-        conn.close()
-        return
-    if book_b is None:
-        print(f"Book '{args.book_b}' not found.")
-        conn.close()
-        return
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        book_a = get_book(args.book_a, conn)
+        book_b = get_book(args.book_b, conn)
+        if book_a is None:
+            print(f"Book '{args.book_a}' not found.")
+            return
+        if book_b is None:
+            print(f"Book '{args.book_b}' not found.")
+            return
 
-    ids_a = set(book_a.chapter_ids)
-    ids_b = set(book_b.chapter_ids)
+        ids_a = set(book_a.chapter_ids)
+        ids_b = set(book_b.chapter_ids)
 
-    added = ids_b - ids_a
-    removed = ids_a - ids_b
-    kept = ids_a & ids_b
+        added = ids_b - ids_a
+        removed = ids_a - ids_b
+        kept = ids_a & ids_b
 
-    print(f"DIFF: {book_a.id} (v{book_a.version}) -> {book_b.id} (v{book_b.version})")
-    print("=" * 60)
+        print(f"DIFF: {book_a.id} (v{book_a.version}) -> {book_b.id} (v{book_b.version})")
+        print("=" * 60)
 
-    if kept:
-        print(f"\n  Kept ({len(kept)}):")
-        for cid in sorted(kept):
-            ch = get_chapter(cid, conn)
-            label = ch.prompt[:50] if ch else "[missing]"
-            print(f"    = {cid}  {label}")
+        if kept:
+            print(f"\n  Kept ({len(kept)}):")
+            for cid in sorted(kept):
+                ch = get_chapter(cid, conn)
+                label = ch.prompt[:50] if ch else "[missing]"
+                print(f"    = {cid}  {label}")
 
-    if added:
-        print(f"\n  Added ({len(added)}):")
-        for cid in sorted(added):
-            ch = get_chapter(cid, conn)
-            label = ch.prompt[:50] if ch else "[missing]"
-            print(f"    + {cid}  {label}")
+        if added:
+            print(f"\n  Added ({len(added)}):")
+            for cid in sorted(added):
+                ch = get_chapter(cid, conn)
+                label = ch.prompt[:50] if ch else "[missing]"
+                print(f"    + {cid}  {label}")
 
-    if removed:
-        print(f"\n  Removed ({len(removed)}):")
-        for cid in sorted(removed):
-            ch = get_chapter(cid, conn)
-            label = ch.prompt[:50] if ch else "[missing]"
-            print(f"    - {cid}  {label}")
+        if removed:
+            print(f"\n  Removed ({len(removed)}):")
+            for cid in sorted(removed):
+                ch = get_chapter(cid, conn)
+                label = ch.prompt[:50] if ch else "[missing]"
+                print(f"    - {cid}  {label}")
 
-    if not added and not removed:
-        print("\n  No chapter changes between these editions.")
-    conn.close()
+        if not added and not removed:
+            print("\n  No chapter changes between these editions.")
+
+        # Step-by-Step Semantic Comparison for prompt engineers
+        min_len = min(len(book_a.chapter_ids), len(book_b.chapter_ids))
+        if min_len > 0:
+            print("\n" + "=" * 60)
+            print("  STEP-BY-STEP SEMANTIC CHANGES")
+            print("=" * 60)
+            import difflib
+            for idx in range(min_len):
+                cid_a = book_a.chapter_ids[idx]
+                cid_b = book_b.chapter_ids[idx]
+                ch_a = get_chapter(cid_a, conn)
+                ch_b = get_chapter(cid_b, conn)
+                if ch_a and ch_b:
+                    identical = (ch_a.prompt == ch_b.prompt and ch_a.result == ch_b.result)
+                    status_lbl = "IDENTICAL" if identical else "MODIFIED"
+                    print(f"\nStep {idx+1}: {cid_a} -> {cid_b} [{status_lbl}]")
+                    if not identical:
+                        # Print unified diff of prompt and result
+                        if ch_a.prompt != ch_b.prompt:
+                            print("  Prompt Changes:")
+                            p_diff = difflib.unified_diff(
+                                ch_a.prompt.splitlines(),
+                                ch_b.prompt.splitlines(),
+                                fromfile="prompt_v1",
+                                tofile="prompt_v2",
+                                lineterm=""
+                            )
+                            for d_line in p_diff:
+                                print(f"    {d_line}")
+                        if ch_a.result != ch_b.result:
+                            print("  Result/Output Changes:")
+                            r_diff = difflib.unified_diff(
+                                ch_a.result.splitlines(),
+                                ch_b.result.splitlines(),
+                                fromfile="result_v1",
+                                tofile="result_v2",
+                                lineterm=""
+                            )
+                            for d_line in r_diff:
+                                print(f"    {d_line}")
 
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 def main():
     parser = argparse.ArgumentParser(
@@ -330,7 +366,11 @@ def main():
     p.add_argument("result", help="The output/result")
     p.add_argument("--actor", help="Who triggered this action")
     p.add_argument("--source", help="Source system (e.g., claude, copilot, manual)")
+    p.add_argument("--model", help="Model name or version (e.g. gpt-4o)")
+    p.add_argument("--temperature", type=float, help="Generation temperature (e.g. 0.7)")
+    p.add_argument("--seed", type=int, help="Generation random seed")
     p.set_defaults(func=cmd_add_chapter)
+
 
     # list-chapters
     p = sub.add_parser("list-chapters", help="List all chapters")

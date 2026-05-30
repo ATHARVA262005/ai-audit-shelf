@@ -9,7 +9,6 @@
 api.py @ATHARVA262005
 db.py @ATHARVA262005
 models.py @ATHARVA262005
-auth.py @ATHARVA262005
 
 # Frontend
 dashboard.html @ATHARVA262005
