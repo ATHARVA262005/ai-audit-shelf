@@ -671,3 +671,35 @@ def test_cli_operations(capsys):
     assert "DIFF: b_001 (v1) -> b_002 (v2)" in captured.out
     assert "STEP-BY-STEP SEMANTIC CHANGES" in captured.out
     assert "Step 1: c_001 -> c_001 [IDENTICAL]" in captured.out
+
+def test_cli_list_limit(capsys):
+    """Test --limit flag on list-chapters and list-books CLI commands."""
+    import argparse
+    import cli
+    from db import get_connection, init_db
+
+    # Seed 5 chapters
+    conn = get_connection()
+    init_db(conn)
+    conn.execute("DELETE FROM chapters")
+    conn.execute("DELETE FROM books")
+    conn.execute("UPDATE counters SET value = 0")
+    conn.commit()
+    conn.close()
+
+    for i in range(1, 6):
+        client.post("/chapter", params={"prompt": f"Prompt {i}", "result": f"Result {i}"})
+
+    # list-chapters --limit 3 should show exactly 3
+    args = argparse.Namespace(limit=3)
+    cli.cmd_list_chapters(args)
+    captured = capsys.readouterr()
+    lines = [l for l in captured.out.strip().split("\n") if l and not l.startswith("-") and not l.startswith("ID")]
+    assert len(lines) == 3
+
+    # list-chapters with no limit should show all 5
+    args_no_limit = argparse.Namespace(limit=None)
+    cli.cmd_list_chapters(args_no_limit)
+    captured = capsys.readouterr()
+    lines_all = [l for l in captured.out.strip().split("\n") if l and not l.startswith("-") and not l.startswith("ID")]
+    assert len(lines_all) == 5
