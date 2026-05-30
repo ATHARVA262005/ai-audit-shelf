@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import csv
+import io
 import concurrent.futures
 import logging
 from datetime import datetime, timezone
@@ -77,6 +79,13 @@ app = FastAPI(
     version="0.2.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 import hmac
 
@@ -480,22 +489,104 @@ def api_new_edition(
 
 
 # --- Export & Diff ---
+@app.get("/export/chapters", dependencies=[Depends(verify_read_api_key)])
+def api_export_chapters(
+    actor: Optional[str] = None,
+    after: Optional[str] = None,
+    conn=Depends(get_db),
+):
+    """Export all chapters as CSV."""
+
+    chapters = list_chapters(conn)
+
+    if actor:
+        chapters = [
+            ch for ch in chapters
+            if ch.actor.lower() == actor.lower()
+        ]
+
+    if after:
+        chapters = [
+            ch for ch in chapters
+            if ch.timestamp >= after
+        ]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "id",
+        "actor",
+        "source",
+        "timestamp",
+        "prompt",
+        "result"
+    ])
+
+    for ch in chapters:
+        writer.writerow([
+            ch.id,
+            ch.actor,
+            ch.source,
+            ch.timestamp,
+            ch.prompt,
+            ch.result
+        ])
+
+    return PlainTextResponse(
+        output.getvalue(),
+        media_type="text/csv"
+    )
+
+
 
 @app.get("/export/book/{book_id}", dependencies=[Depends(verify_read_api_key)])
 def api_export_book(
     book_id: str,
-    format: str = Query("json", pattern="^(json|markdown)$"),
+    format: str = Query("json", pattern="^(json|markdown|csv)$"),
     conn=Depends(get_db),
 ):
     """Export a book with all its chapters (authenticated)."""
     book = get_book(book_id, conn)
     if book is None:
         raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found")
+
     chapters = [get_chapter(cid, conn) for cid in book.chapter_ids]
     chapters = [ch for ch in chapters if ch is not None]
 
     if format == "json":
-        return {"book": book.to_dict(), "chapters": [ch.to_dict() for ch in chapters]}
+        return {
+            "book": book.to_dict(),
+            "chapters": [ch.to_dict() for ch in chapters]
+        }
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        writer.writerow([
+            "id",
+            "actor",
+            "source",
+            "timestamp",
+            "prompt",
+            "result"
+        ])
+
+        for ch in chapters:
+            writer.writerow([
+                ch.id,
+                ch.actor,
+                ch.source,
+                ch.timestamp,
+                ch.prompt,
+                ch.result
+            ])
+
+        return PlainTextResponse(
+            output.getvalue(),
+            media_type="text/csv"
+        )
 
     # Markdown
     lines = [f"# {book.title}", ""]
