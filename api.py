@@ -27,6 +27,7 @@ class ChapterCreate(BaseModel):
     seed: Optional[int] = Field(None)
     validation_status: Optional[str] = Field(None, max_length=50)
     validation_message: Optional[str] = Field(None, max_length=1000)
+    metadata: Optional[dict] = Field(default_factory=dict)
 
 
 class BookCreate(BaseModel):
@@ -52,7 +53,6 @@ def _run_regex_match(pattern: str, string: str, queue):
 def safe_regex_search(pattern: str, string: str, timeout: float = 1.5) -> bool:
     """Run regex search in an isolated OS process to guarantee timeout enforcement under ReDoS."""
     import multiprocessing
-    # Use standard Spawn context on Windows/Unix for consistent cross-platform behavior
     ctx = multiprocessing.get_context("spawn")
     queue = ctx.Queue()
     proc = ctx.Process(target=_run_regex_match, args=(pattern, string, queue))
@@ -70,7 +70,6 @@ def safe_regex_search(pattern: str, string: str, timeout: float = 1.5) -> bool:
     return False
 
 
-
 app = FastAPI(
     title="AI Audit API",
     description="Git-like versioning for AI workflows, organized as books and chapters.",
@@ -80,14 +79,12 @@ app = FastAPI(
 
 import hmac
 
-# Configure structured application logging (resolving OBS-01 and OBS-02)
 logging.basicConfig(
     level=logging.INFO,
     format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s"}'
 )
 logger = logging.getLogger("ai_audit")
 
-# Secure default CORS configuration: do not default to "*" wildcard (resolving SEC-09)
 CORS_ORIGINS_RAW = os.environ.get("AUDIT_CORS_ORIGINS", "http://localhost:8000")
 CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_RAW.split(",") if origin.strip()]
 allow_creds = CORS_ORIGINS != ["*"]
@@ -100,13 +97,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Separate read vs. write keys to allow distinct access policy controls (resolving SEC-01 and SEC-03)
 WRITE_API_KEY = os.environ.get("AUDIT_API_KEY", "")
 READ_API_KEY = os.environ.get("AUDIT_READ_API_KEY", "")
 LOCKDOWN_READS = os.environ.get("AUDIT_LOCKDOWN_READS", "false").lower() == "true"
 DEV_MODE = os.environ.get("AUDIT_DEV_MODE", "false").lower() == "true"
 
-# Enforce fail-fast security gate in production on server startup (resolving SEC-01)
 if not WRITE_API_KEY and not DEV_MODE:
     logger.critical("Production Startup Prevented: AUDIT_API_KEY is not set.")
     raise RuntimeError(
@@ -160,9 +155,6 @@ def get_db():
         conn.close()
 
 
-
-# --- Chapters ---
-
 # --- Chapters ---
 
 @app.post("/chapter", response_model=dict, dependencies=[Depends(verify_write_api_key)])
@@ -176,11 +168,11 @@ def api_add_chapter(
     seed: Optional[int] = Query(None),
     validation_status: Optional[str] = Query(None),
     validation_message: Optional[str] = Query(None),
+    metadata: Optional[str] = Query(None),
     body: Optional[ChapterCreate] = None,
     conn=Depends(get_db),
 ):
     """Log a new chapter (atomic AI action) via JSON request body or query parameter fallback."""
-    # 1. Resolve values from body or parameters (favor body)
     if body:
         f_prompt = body.prompt
         f_result = body.result
@@ -191,8 +183,8 @@ def api_add_chapter(
         f_seed = body.seed
         f_val_status = body.validation_status
         f_val_msg = body.validation_message
+        f_metadata = body.metadata or {}
     else:
-        # Enforce parameter boundaries if query fallback is utilized
         if not prompt or not result:
             raise HTTPException(status_code=400, detail="Missing prompt or result payload")
         if len(prompt) > 50000 or len(result) > 50000:
@@ -206,6 +198,12 @@ def api_add_chapter(
         f_seed = seed
         f_val_status = validation_status[:50] if validation_status else None
         f_val_msg = validation_message[:1000] if validation_message else None
+        f_metadata = {}
+        if metadata:
+            try:
+                f_metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="metadata must be valid JSON")
 
     chapter_id = next_id(conn, "chapter")
     chapter = Chapter(
@@ -220,6 +218,7 @@ def api_add_chapter(
         seed=f_seed,
         validation_status=f_val_status,
         validation_message=f_val_msg,
+        metadata=f_metadata,
     )
     save_chapter(chapter, conn)
     return {"status": "created", "chapter": chapter.to_dict()}
@@ -241,7 +240,6 @@ def api_validate_chapter(
     passed = True
     reasons = []
 
-    # 1. ReDoS-safe regex evaluation (1.5s execution boundary)
     if regex_pattern:
         if len(regex_pattern) > 1000:
             raise HTTPException(status_code=400, detail="Regex pattern exceeds length safety limits")
@@ -256,14 +254,12 @@ def api_validate_chapter(
         except re.error as e:
             raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {e}")
 
-    # 2. Keywords check
     if required_keywords:
         missing = [kw for kw in required_keywords if kw.lower() not in chapter.result.lower()]
         if missing:
             passed = False
             reasons.append(f"Missing required keywords: {', '.join(missing)}")
 
-    # 3. JSON format check
     if json_format:
         try:
             json.loads(chapter.result)
@@ -271,11 +267,9 @@ def api_validate_chapter(
             passed = False
             reasons.append("Result is not a valid JSON document")
 
-    # Update chapter status in DB
     chapter.validation_status = "passed" if passed else "failed"
     chapter.validation_message = "Validation passed." if passed else " | ".join(reasons)
 
-    # Perform SQL UPDATE
     conn.execute(
         "UPDATE chapters SET validation_status = ?, validation_message = ? WHERE id = ?",
         (chapter.validation_status, chapter.validation_message, chapter.id),
@@ -298,7 +292,6 @@ def api_list_chapters(
     conn=Depends(get_db)
 ):
     """List all chapters with memory-safe limit and offset pagination."""
-    # SQLite offset pagination fallback
     rows = conn.execute(
         "SELECT * FROM chapters ORDER BY timestamp DESC LIMIT ? OFFSET ?",
         (limit, offset)
@@ -380,7 +373,6 @@ def api_search_chapters(
     ]
 
 
-
 # --- Books ---
 
 @app.post("/book", response_model=dict, dependencies=[Depends(verify_write_api_key)])
@@ -396,7 +388,6 @@ def api_create_book(
         f_chapter_ids = payload.chapter_ids
         f_feature = payload.feature
     else:
-        # Legacy list representation fallback
         if not title:
             raise HTTPException(status_code=400, detail="Missing title query parameter")
         if len(title) > 255 or (feature and len(feature) > 255):
@@ -455,7 +446,6 @@ def api_new_edition(
         f_title = payload.title or parent.title
         f_chapter_ids = payload.chapter_ids or parent.chapter_ids
     else:
-        # Legacy list representation fallback
         if title and len(title) > 255:
             raise HTTPException(status_code=400, detail="Title length exceeds 255 characters")
         f_title = title or parent.title
@@ -478,7 +468,6 @@ def api_new_edition(
     return {"status": "created", "book": new_book.to_dict()}
 
 
-
 # --- Export & Diff ---
 
 @app.get("/export/book/{book_id}", dependencies=[Depends(verify_read_api_key)])
@@ -497,7 +486,6 @@ def api_export_book(
     if format == "json":
         return {"book": book.to_dict(), "chapters": [ch.to_dict() for ch in chapters]}
 
-    # Markdown
     lines = [f"# {book.title}", ""]
     lines.append(f"**Book ID:** {book.id}  ")
     lines.append(f"**Feature:** {book.feature}  ")
@@ -532,7 +520,7 @@ def api_diff_books(
     id_b: str = Query(..., description="Second book ID"),
     conn=Depends(get_db),
 ):
-    """Compare two books — shows added, removed, kept chapters, and a line-by-line semantic diff of changes (v0.2.0 Killer Feature)."""
+    """Compare two books — shows added, removed, kept chapters, and a line-by-line semantic diff of changes."""
     import difflib
     book_a = get_book(id_a, conn)
     book_b = get_book(id_b, conn)
@@ -555,7 +543,7 @@ def api_diff_books(
         cid_b = book_b.chapter_ids[idx]
         ch_a = get_chapter(cid_a, conn)
         ch_b = get_chapter(cid_b, conn)
-        
+
         if ch_a and ch_b:
             prompt_diff = list(difflib.ndiff(ch_a.prompt.splitlines(), ch_b.prompt.splitlines()))
             result_diff = list(difflib.ndiff(ch_a.result.splitlines(), ch_b.result.splitlines()))
@@ -627,15 +615,14 @@ def api_backup_db():
     import sqlite3
     from db import DB_PATH
     logger.info("Starting safe online SQLite database backup.")
-    
+
     backup_dir = DB_PATH.parent / "backups"
     backup_dir.mkdir(exist_ok=True)
-    
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_file = backup_dir / f"audit_backup_{timestamp}.db"
-    
+
     try:
-        # Perform safe point-in-time online backup
         src = get_connection()
         dst = sqlite3.connect(str(backup_file))
         with dst:
@@ -660,4 +647,3 @@ if __name__ == "__main__":
         ssl_keyfile=ssl_key,
         ssl_certfile=ssl_cert
     )
-

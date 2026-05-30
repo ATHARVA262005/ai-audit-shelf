@@ -561,7 +561,8 @@ def test_cli_operations(capsys):
         source="unit_test",
         model="gpt-4o",
         temperature=0.7,
-        seed=101
+        seed=101,
+        metadata=None
     )
     cli.cmd_add_chapter(add_args)
     captured = capsys.readouterr()
@@ -616,7 +617,8 @@ def test_cli_operations(capsys):
         source="unit_test",
         model="gpt-4o",
         temperature=0.7,
-        seed=102
+        seed=102,
+        metadata=None
     )
     cli.cmd_add_chapter(add_args2)
     captured = capsys.readouterr()
