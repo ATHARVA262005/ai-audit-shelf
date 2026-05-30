@@ -351,8 +351,9 @@ def api_search_chapters(
         query += " AND (LOWER(prompt) LIKE ? OR LOWER(result) LIKE ?)"
         params.extend([f"%{keyword.lower()}%", f"%{keyword.lower()}%"])
     if after:
+        after_normalized = after[:19]
         query += " AND timestamp >= ?"
-        params.append(after)
+        params.append(after_normalized)
     if before:
         query += " AND timestamp <= ?"
         params.append(before)
@@ -660,4 +661,6 @@ if __name__ == "__main__":
         ssl_keyfile=ssl_key,
         ssl_certfile=ssl_cert
     )
+
+
 
