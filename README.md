@@ -147,6 +147,14 @@ export AUDIT_API_KEY=secret123
 # Now POST requests need: -H "X-API-Key: secret123"
 ```
 
+**Default Actor (optional):** Set `AUDIT_ACTOR` env var to set a default value for the `--actor` parameter in the CLI. An explicitly passed `--actor` flag will still take priority.
+
+```bash
+export AUDIT_ACTOR=ci-bot
+# Now add-chapter logs actor as "ci-bot" automatically
+python cli.py add-chapter "Deploy" "Success"
+```
+
 ---
 
 ### 3. Web Dashboard
