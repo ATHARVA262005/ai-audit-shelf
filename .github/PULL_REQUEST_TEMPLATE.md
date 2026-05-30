@@ -18,8 +18,10 @@ Fixes # (issue number)
 - [ ] Tested the dashboard UI (if applicable)
 
 ## Checklist:
+- [ ] I have signed the [Contributor License Agreement (CLA)](https://cla-assistant.io/ATHARVA262005/ai-audit-shelf)
 - [ ] My code follows the style guidelines of this project
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation (README.md, etc.)
 - [ ] My changes generate no new warnings
+

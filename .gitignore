@@ -224,4 +224,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Test Databases
+test_audit.db
+
 .env*.local
