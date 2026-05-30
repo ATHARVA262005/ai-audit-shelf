@@ -12,6 +12,14 @@ from db import get_connection, init_db, next_id, save_chapter, get_chapter, list
 
 def cmd_add_chapter(args):
     """Log a new chapter (atomic AI action)."""
+    meta_dict = {}
+    if args.metadata:
+        try:
+            meta_dict = json.loads(args.metadata)
+        except json.JSONDecodeError:
+            print("Error: --metadata must be valid JSON.")
+            return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         chapter_id = next_id(conn, "chapter")
@@ -25,6 +33,7 @@ def cmd_add_chapter(args):
             model=args.model,
             temperature=args.temperature,
             seed=args.seed,
+            metadata=meta_dict,
         )
         save_chapter(chapter, conn)
     print(f"Chapter {chapter_id} logged.")
@@ -77,7 +86,6 @@ def cmd_create_book(args):
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
 
-        # Validate chapter IDs exist
         for cid in args.chapter_ids:
             if get_chapter(cid, conn) is None:
                 print(f"Error: Chapter '{cid}' not found.")
@@ -147,7 +155,6 @@ def cmd_new_edition(args):
             print(f"Book '{args.book_id}' not found.")
             return
 
-        # Validate new chapter IDs
         chapter_ids = args.chapter_ids or parent.chapter_ids
         for cid in chapter_ids:
             if get_chapter(cid, conn) is None:
@@ -177,7 +184,6 @@ def cmd_shelf(args):
         print("Library is empty.")
         return
 
-    # Group by feature
     features: dict[str, list[Book]] = {}
     for b in books:
         features.setdefault(b.feature, []).append(b)
@@ -308,7 +314,6 @@ def cmd_diff_books(args):
         if not added and not removed:
             print("\n  No chapter changes between these editions.")
 
-        # Step-by-Step Semantic Comparison for prompt engineers
         min_len = min(len(book_a.chapter_ids), len(book_b.chapter_ids))
         if min_len > 0:
             print("\n" + "=" * 60)
@@ -325,7 +330,6 @@ def cmd_diff_books(args):
                     status_lbl = "IDENTICAL" if identical else "MODIFIED"
                     print(f"\nStep {idx+1}: {cid_a} -> {cid_b} [{status_lbl}]")
                     if not identical:
-                        # Print unified diff of prompt and result
                         if ch_a.prompt != ch_b.prompt:
                             print("  Prompt Changes:")
                             p_diff = difflib.unified_diff(
@@ -369,8 +373,8 @@ def main():
     p.add_argument("--model", help="Model name or version (e.g. gpt-4o)")
     p.add_argument("--temperature", type=float, help="Generation temperature (e.g. 0.7)")
     p.add_argument("--seed", type=int, help="Generation random seed")
+    p.add_argument("--metadata", help='Optional JSON string e.g. \'{"model":"gpt-4o","tokens":512}\'')
     p.set_defaults(func=cmd_add_chapter)
-
 
     # list-chapters
     p = sub.add_parser("list-chapters", help="List all chapters")

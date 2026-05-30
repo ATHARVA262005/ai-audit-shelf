@@ -721,7 +721,13 @@ async function showChapterDetail(chapterId) {
     ${reproducibility}
     ${validation}
     <div class="detail-row"><div class="detail-label">Prompt</div><div class="detail-value prompt-block">${escapeHtml(ch.prompt)}</div></div>
-    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${escapeHtml(ch.result)}</div></div>`;
+    <div class="detail-row"><div class="detail-label">Result</div><div class="detail-value prompt-block">${escapeHtml(ch.result)}</div></div>
+    ${ch.metadata && Object.keys(ch.metadata).length > 0
+      ? `<div class="detail-row">
+           <div class="detail-label">Metadata</div>
+           <div class="detail-value prompt-block">${escapeHtml(JSON.stringify(ch.metadata, null, 2))}</div>
+         </div>`
+      : ''}`;
 
   const panel = document.getElementById('chapterDetail');
   panel.innerHTML = html;
