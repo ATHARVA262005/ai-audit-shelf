@@ -8,6 +8,7 @@ AI Audit Shelf is designed to plug into any part of your AI stack in a few lines
 
 * [Python — requests (General Frameworks)](#python--requests-general-frameworks)
 * [LangChain — Callback Handler](#langchain--callback-handler)
+* [LangChain.js — Callback Handler (TypeScript/JavaScript)](#langchainjs--callback-handler-typescriptjavascript)
 * [LlamaIndex — Callback Handler](#llamaindex--callback-handler)
 * [OpenAI — Function Calls](#openai--function-calls)
 * [Vercel AI SDK — Next.js App Router](#vercel-ai-sdk--nextjs-app-router)
@@ -120,6 +121,125 @@ handler.bundle("EU Refund Lookup", feature="Support Automation")
 ```
 
 ---
+
+## LangChain.js — Callback Handler (TypeScript/JavaScript)
+
+This is the TypeScript equivalent of the Python `AuditCallbackHandler` above.
+It logs every LLM call and tool execution automatically inside your LangChain.js agents.
+
+```typescript
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
+import type { LLMResult } from "@langchain/core/outputs";
+
+const API = process.env.AUDIT_API_URL ?? "http://localhost:8000";
+const AUDIT_API_KEY = process.env.AUDIT_API_KEY ?? "";
+
+class AuditCallbackHandler extends BaseCallbackHandler {
+  name = "AuditCallbackHandler";
+  private actor: string;
+  private chapters: string[] = [];
+
+  constructor(actor = "langchain-agent") {
+    super();
+    this.actor = actor;
+  }
+
+  private async log(prompt: string, result: string): Promise<string> {
+    try {
+      const res = await fetch(
+        `${API}/chapter?` +
+          new URLSearchParams({
+            prompt: prompt.slice(0, 2000),
+            result: result.slice(0, 2000),
+            actor: this.actor,
+            source: "langchain-js",
+          }),
+        {
+          method: "POST",
+          headers: {
+            ...(AUDIT_API_KEY ? { "X-API-Key": AUDIT_API_KEY } : {}),
+          },
+        }
+      );
+      const data = await res.json();
+      return data.chapter.id;
+    } catch (err) {
+      console.error("Failed to log chapter to AI Audit server:", err);
+      return "";
+    }
+  }
+
+  async handleLLMEnd(output: LLMResult, _runId: string, _parentRunId?: string, tags?: string[], kwargs?: { prompts?: string[] }): Promise<void> {
+    const prompt = kwargs?.prompts?.[0] ?? "";
+    const result = output.generations[0]?.[0]?.text ?? "";
+    const id = await this.log(prompt, result);
+    if (id) this.chapters.push(id);
+  }
+
+  async handleToolEnd(output: string, _runId: string, _parentRunId?: string, tags?: string[], kwargs?: { name?: string }): Promise<void> {
+    const id = await this.log(
+      `Tool: ${kwargs?.name ?? "unknown"}`,
+      output.slice(0, 2000)
+    );
+    if (id) this.chapters.push(id);
+  }
+
+  async bundle(title: string, feature = ""): Promise<Record<string, unknown>> {
+    try {
+      const res = await fetch(
+        `${API}/book?` +
+          new URLSearchParams({
+            title,
+            feature: feature || title,
+          }),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(AUDIT_API_KEY ? { "X-API-Key": AUDIT_API_KEY } : {}),
+          },
+          body: JSON.stringify(this.chapters),
+        }
+      );
+      const data = await res.json();
+      this.chapters = [];
+      return data.book;
+    } catch (err) {
+      console.error("Failed to bundle chapters:", err);
+      return {};
+    }
+  }
+}
+
+// Usage
+import { ChatOpenAI } from "@langchain/openai";
+import { AgentExecutor, createOpenAIFunctionsAgent } from "langchain/agents";
+import { pull } from "langchain/hub";
+import { DynamicTool } from "@langchain/core/tools";
+
+const handler = new AuditCallbackHandler("support-bot");
+
+const llm = new ChatOpenAI({
+  model: "gpt-4",
+  callbacks: [handler],
+});
+
+const tools = [
+  new DynamicTool({
+    name: "Search",
+    description: "Search docs",
+    func: async () => "results...",
+  }),
+];
+
+const prompt = await pull("hwchase17/openai-functions-agent");
+const agent = await createOpenAIFunctionsAgent({ llm, tools, prompt });
+const executor = new AgentExecutor({ agent, tools, callbacks: [handler] });
+
+await executor.invoke({ input: "Find the refund policy for EU customers" });
+const book = await handler.bundle("EU Refund Lookup", "Support Automation");
+console.log("Audited! Book:", book.id);
+```
 
 ## LlamaIndex — Callback Handler
 
