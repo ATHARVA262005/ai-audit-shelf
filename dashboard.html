@@ -19,6 +19,14 @@
     --yellow: #fbbf24;
     --radius: 10px;
   }
+  [data-theme="light"] {
+  --bg: #f8f9fc;
+  --surface: #ffffff;
+  --surface2: #f1f3f8;
+  --border: #dde1ee;
+  --text: #1a1d27;
+  --text2: #6b7080;
+}
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -315,10 +323,14 @@
 <body>
 
 <div class="sidebar">
-  <div class="sidebar-header">
-    <h1>AI Audit</h1>
-    <p>Git for AI workflows — v0.2.0</p>
+  <div class="sidebar-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+      <h1>AI Audit</h1>
+      <p>Git for AI workflows — v0.2.0</p>
+    </div>
+    <button id="theme-toggle" onclick="toggleTheme()" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0; color:var(--text2);">🌙</button>
   </div>
+
   <div class="nav">
     <div class="nav-item active" data-page="shelf"><span class="nav-icon">&#x1f4da;</span> Library</div>
     <div class="nav-item" data-page="books"><span class="nav-icon">&#x1f4d6;</span> Books</div>
@@ -743,7 +755,31 @@ document.querySelectorAll('.nav-item').forEach(item => {
 
 // --- Init ---
 loadAndRender();
+function toggleTheme() {
+  const html = document.documentElement;
+  const btn = document.getElementById('theme-toggle');
+  const isLight = html.getAttribute('data-theme') === 'light';
+  if (isLight) {
+    html.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'dark');
+    btn.textContent = '🌙';
+  } else {
+    html.setAttribute('data-theme', 'light');
+    localStorage.setItem('theme', 'light');
+    btn.textContent = '☀️';
+  }
+}
 
+(function applyThemeOnLoad() {
+  if (localStorage.getItem('theme') === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    // Button not in DOM yet, so set after DOM ready
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = '☀️';
+    });
+  }
+})();
 </script>
 </body>
 </html>
