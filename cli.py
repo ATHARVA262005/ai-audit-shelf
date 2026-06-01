@@ -38,6 +38,9 @@ def cmd_list_chapters(args):
     if not chapters:
         print("No chapters yet.")
         return
+    if args.json:
+        print(json.dumps([ch.to_dict() for ch in chapters], indent=2))
+        return
     print(f"{'ID':<8} {'Timestamp':<28} {'Prompt'}")
     print("-" * 80)
     for ch in chapters:
@@ -103,6 +106,9 @@ def cmd_list_books(args):
         books = list_books(conn)
     if not books:
         print("Bookshelf is empty.")
+        return
+    if args.json:
+        print(json.dumps([b.to_dict() for b in books], indent=2))
         return
     print(f"{'ID':<8} {'Ver':<5} {'Chapters':<10} {'Title'}")
     print("-" * 60)
@@ -175,6 +181,9 @@ def cmd_shelf(args):
         books = list_books(conn)
     if not books:
         print("Library is empty.")
+        return
+    if args.json:
+        print(json.dumps([b.to_dict() for b in books], indent=2))
         return
 
     # Group by feature
@@ -374,6 +383,7 @@ def main():
 
     # list-chapters
     p = sub.add_parser("list-chapters", help="List all chapters")
+    p.add_argument("--json", action="store_true", help="Output as JSON")
     p.set_defaults(func=cmd_list_chapters)
 
     # show-chapter
@@ -390,6 +400,7 @@ def main():
 
     # list-books
     p = sub.add_parser("list-books", help="List all books")
+    p.add_argument("--json", action="store_true", help="Output as JSON")
     p.set_defaults(func=cmd_list_books)
 
     # show-book
@@ -406,6 +417,7 @@ def main():
 
     # shelf
     p = sub.add_parser("shelf", help="Display the library organized by feature")
+    p.add_argument("--json", action="store_true", help="Output as JSON")
     p.set_defaults(func=cmd_shelf)
 
     # export-book
