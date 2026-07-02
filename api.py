@@ -71,7 +71,7 @@ def safe_regex_search(pattern: str, string: str, timeout: float = 1.5) -> bool:
 
 
 
-app = FastAPI(
+app = FastAPI(  
     title="AI Audit API",
     description="Git-like versioning for AI workflows, organized as books and chapters.",
     version="0.2.0",
@@ -655,7 +655,7 @@ if __name__ == "__main__":
     ssl_cert = os.environ.get("AUDIT_SSL_CERTFILE", None)
     uvicorn.run(
         app,
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=8000,
         ssl_keyfile=ssl_key,
         ssl_certfile=ssl_cert

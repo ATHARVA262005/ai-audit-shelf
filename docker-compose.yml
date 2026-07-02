@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    container_name: ai-audit-shelf-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - AUDIT_API_KEY=${AUDIT_API_KEY:-}
+      - AUDIT_DEV_MODE=${AUDIT_DEV_MODE:-true}
+    restart: unless-stopped
+
+  dashboard:
+    image: nginx:alpine
+    container_name: ai-audit-shelf-dashboard
+    ports:
+      - "8080:80"
+    volumes:
+      - ./dashboard.html:/usr/share/nginx/html/index.html:ro
+    depends_on:
+      - api
+    restart: unless-stopped
