@@ -73,6 +73,31 @@ pip install fastapi uvicorn
 
 ---
 
+### Docker (one-command self-host)
+
+Spin up the API and Dashboard together with Docker Compose — no local Python setup needed.
+
+```bash
+docker-compose up --build
+```
+
+- API: `http://localhost:8000`
+- Dashboard: `http://localhost:8080`
+
+By default the container runs in dev mode (`AUDIT_DEV_MODE=true`), so no API key is required locally. Open the dashboard, paste your API's URL into the **API URL** field in the sidebar, and it will connect automatically.
+
+`audit.db` is bind-mounted to your project folder, so your audit trail persists across restarts.
+
+For a production-like run with auth enabled:
+```bash
+AUDIT_DEV_MODE=false AUDIT_API_KEY=your-secret-key docker-compose up --build
+```
+
+To stop:
+```bash
+docker-compose down
+```
+
 ### 1. CLI
 
 Log actions, bundle into books, browse the shelf.
