@@ -117,6 +117,8 @@ Start the server, then call it from any tool or language.
 python api.py
 ```
 
+> **Note:** Keep the API server running while using the Web Dashboard or the Agent Demo, as both depend on the server being available.
+
 Server runs at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
 
 ```bash
