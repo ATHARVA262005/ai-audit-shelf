@@ -1,4 +1,4 @@
-fastapi>=0.136.3
+fastapi>=0.139.2
 uvicorn[standard]>=0.48.0
 pydantic>=2.13.4
 pytest>=9.0.3
