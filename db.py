@@ -40,6 +40,8 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
             seed INTEGER,
             validation_status TEXT,
             validation_message TEXT,
+            hallucination_score REAL,
+            hallucinated_claims TEXT DEFAULT '[]',
             metadata TEXT DEFAULT '{}'
         );
 
@@ -79,6 +81,10 @@ def init_db(conn: Optional[sqlite3.Connection] = None):
         conn.execute("ALTER TABLE chapters ADD COLUMN validation_status TEXT")
     if "validation_message" not in columns:
         conn.execute("ALTER TABLE chapters ADD COLUMN validation_message TEXT")
+    if "hallucination_score" not in columns:
+        conn.execute("ALTER TABLE chapters ADD COLUMN hallucination_score REAL")
+    if "hallucinated_claims" not in columns:
+        conn.execute("ALTER TABLE chapters ADD COLUMN hallucinated_claims TEXT DEFAULT '[]'")
 
 
     # Ensure counters exist
@@ -113,8 +119,8 @@ def next_id(conn: sqlite3.Connection, prefix: str) -> str:
 
 def save_chapter(chapter: Chapter, conn: sqlite3.Connection):
     conn.execute(
-        """INSERT INTO chapters (id, prompt, result, actor, timestamp, source, model, temperature, seed, validation_status, validation_message, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO chapters (id, prompt, result, actor, timestamp, source, model, temperature, seed, validation_status, validation_message, hallucination_score, hallucinated_claims, metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             chapter.id,
             chapter.prompt,
@@ -127,6 +133,8 @@ def save_chapter(chapter: Chapter, conn: sqlite3.Connection):
             chapter.seed,
             chapter.validation_status,
             chapter.validation_message,
+            chapter.hallucination_score,
+            json.dumps(chapter.hallucinated_claims) if chapter.hallucinated_claims else '[]',
             json.dumps(chapter.metadata),
         ),
     )
@@ -151,6 +159,8 @@ def get_chapter(chapter_id: str, conn: sqlite3.Connection) -> Optional[Chapter]:
         seed=row["seed"],
         validation_status=row["validation_status"],
         validation_message=row["validation_message"],
+        hallucination_score=row["hallucination_score"],
+        hallucinated_claims=json.loads(row["hallucinated_claims"]) if row["hallucinated_claims"] else [],
         metadata=json.loads(row["metadata"]),
     )
 
@@ -170,6 +180,8 @@ def list_chapters(conn: sqlite3.Connection) -> list[Chapter]:
             seed=r["seed"],
             validation_status=r["validation_status"],
             validation_message=r["validation_message"],
+            hallucination_score=r["hallucination_score"],
+            hallucinated_claims=json.loads(r["hallucinated_claims"]) if r["hallucinated_claims"] else [],
             metadata=json.loads(r["metadata"]),
         )
         for r in rows

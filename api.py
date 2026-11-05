@@ -15,6 +15,7 @@ from fastapi.responses import PlainTextResponse, HTMLResponse
 
 from models import Chapter, Book
 from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
+from nli import get_nli_engine
 
 
 class ChapterCreate(BaseModel):
@@ -291,6 +292,40 @@ def api_validate_chapter(
     }
 
 
+@app.post("/chapter/{chapter_id}/check-hallucination", response_model=dict, dependencies=[Depends(verify_write_api_key)])
+def api_check_hallucination(chapter_id: str, conn=Depends(get_db)):
+    """Run Local Natural Language Inference (NLI) model to assess factual entailment and detect hallucinations."""
+    chapter = get_chapter(chapter_id, conn)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter '{chapter_id}' not found")
+
+    engine = get_nli_engine()
+    eval_result = engine.evaluate(premise=chapter.prompt, hypothesis_text=chapter.result)
+
+    chapter.hallucination_score = eval_result["faithfulness_score"]
+    chapter.hallucinated_claims = eval_result["hallucinated_sentences"]
+
+    conn.execute(
+        "UPDATE chapters SET hallucination_score = ?, hallucinated_claims = ? WHERE id = ?",
+        (chapter.hallucination_score, json.dumps(chapter.hallucinated_claims), chapter.id)
+    )
+    conn.commit()
+    logger.info(f"NLI AUDIT: Chapter '{chapter.id}' evaluated - Faithfulness: {chapter.hallucination_score}, Detected: {eval_result['hallucination_detected']}")
+
+    return {
+        "chapter_id": chapter_id,
+        "faithfulness_score": chapter.hallucination_score,
+        "hallucination_detected": eval_result["hallucination_detected"],
+        "total_claims": eval_result["total_claims"],
+        "entailed_claims": eval_result["entailed_claims"],
+        "contradicted_claims": eval_result["contradicted_claims"],
+        "unsupported_claims": eval_result["unsupported_claims"],
+        "claims_analysis": eval_result["claims_analysis"],
+        "hallucinated_sentences": eval_result["hallucinated_sentences"],
+        "nli_backend": eval_result["backend"]
+    }
+
+
 @app.get("/chapters", response_model=list[dict], dependencies=[Depends(verify_read_api_key)])
 def api_list_chapters(
     limit: int = Query(100, ge=1, le=1000),
@@ -316,6 +351,8 @@ def api_list_chapters(
             seed=r["seed"],
             validation_status=r["validation_status"],
             validation_message=r["validation_message"],
+            hallucination_score=r["hallucination_score"] if "hallucination_score" in r.keys() else None,
+            hallucinated_claims=json.loads(r["hallucinated_claims"]) if ("hallucinated_claims" in r.keys() and r["hallucinated_claims"]) else [],
             metadata=json.loads(r["metadata"]),
         ).to_dict()
         for r in rows
@@ -374,6 +411,8 @@ def api_search_chapters(
             seed=r["seed"],
             validation_status=r["validation_status"],
             validation_message=r["validation_message"],
+            hallucination_score=r["hallucination_score"] if "hallucination_score" in r.keys() else None,
+            hallucinated_claims=json.loads(r["hallucinated_claims"]) if ("hallucinated_claims" in r.keys() and r["hallucinated_claims"]) else [],
             metadata=json.loads(r["metadata"]),
         ).to_dict()
         for r in rows
@@ -566,6 +605,21 @@ def api_diff_books(
             is_regression = (val_a == "passed" and val_b == "failed")
             is_fixed = (val_a == "failed" and val_b == "passed")
 
+            # Evaluate Local NLI Hallucination & Faithfulness transition
+            engine = get_nli_engine()
+            score_a = ch_a.hallucination_score
+            if score_a is None:
+                res_a = engine.evaluate(ch_a.prompt, ch_a.result)
+                score_a = res_a["faithfulness_score"]
+            score_b = ch_b.hallucination_score
+            claims_b = ch_b.hallucinated_claims or []
+            if score_b is None:
+                res_b = engine.evaluate(ch_b.prompt, ch_b.result)
+                score_b = res_b["faithfulness_score"]
+                claims_b = res_b["hallucinated_sentences"]
+            
+            is_hallucination_regression = bool(score_b < score_a and score_b < 0.70)
+
             steps_comparison.append({
                 "step_number": idx + 1,
                 "chapter_a": {
@@ -595,6 +649,13 @@ def api_diff_books(
                     "is_fixed": is_fixed,
                     "is_unchanged": (val_a == val_b),
                     "message": ch_b.validation_message or ch_a.validation_message,
+                },
+                "nli_faithfulness": {
+                    "score_a": score_a,
+                    "score_b": score_b,
+                    "delta": round(score_b - score_a, 2),
+                    "is_regression": is_hallucination_regression,
+                    "hallucinated_claims": claims_b
                 },
                 "prompt_diff": prompt_diff,
                 "result_diff": result_diff,

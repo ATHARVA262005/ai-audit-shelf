@@ -101,6 +101,9 @@ python cli.py diff-books b_001 b_002
 python cli.py export-book b_001 --format markdown
 python cli.py export-book b_001 --format json
 
+# Pinpoint Hallucinations with Local NLI Engine
+python cli.py check-hallucination c_008
+
 # Search
 python cli.py search-chapters --actor alice
 python cli.py search-chapters --keyword "sales"
@@ -218,9 +221,10 @@ Inside, you will find complete, typed examples for:
 ```
 aiAudit/
 ├── models.py         # Chapter and Book dataclasses
-├── db.py             # SQLite storage layer
-├── cli.py            # HTTP CLI Client on shared API (12 commands, offline fallback)
-├── api.py            # FastAPI server (14 REST endpoints)
+├── db.py             # SQLite storage layer (WAL mode, dynamic migrations)
+├── nli.py            # Local Natural Language Inference (NLI) engine for hallucination detection
+├── cli.py            # HTTP CLI Client on shared API (13 commands, offline fallback)
+├── api.py            # FastAPI server (16 REST endpoints)
 ├── dashboard.html    # React 18 single-page web dashboard (no build step needed)
 ├── frontend/         # React 18 + Vite developer package
 ├── demo_agent.py     # Integration demo
@@ -242,7 +246,9 @@ aiAudit/
 | GET | `/book/{id}` | Get a book by ID |
 | POST | `/book/{id}/edition` | Create new edition (version bump) |
 | GET | `/export/book/{id}` | Export as JSON or `?format=markdown` |
-| GET | `/diff/books` | Compare two books (`?id_a=X&id_b=Y`) |
+| POST | `/chapter/{id}/validate` | Evaluate assertion gates (JSON, regex, schema) |
+| POST | `/chapter/{id}/check-hallucination` | Run local NLI to pinpoint hallucinated claims |
+| GET | `/diff/books` | Compare two books with GitHub-style diff, gate transitions & NLI regression alerts |
 | GET | `/shelf` | Library grouped by feature |
 
 Full interactive docs at `http://localhost:8000/docs` when the server is running.

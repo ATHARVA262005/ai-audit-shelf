@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 @dataclass
@@ -18,9 +18,9 @@ class Chapter:
     seed: Optional[int] = None
     validation_status: Optional[str] = None  # e.g., "passed", "failed", "skipped"
     validation_message: Optional[str] = None  # details of validation rule run
+    hallucination_score: Optional[float] = None  # 0.0 (hallucinated) to 1.0 (100% faithful)
+    hallucinated_claims: list = field(default_factory=list)  # list of flagged sentences
     metadata: dict = field(default_factory=dict)
-
-
 
     def to_dict(self):
         return asdict(self)

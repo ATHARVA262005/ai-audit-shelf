@@ -181,6 +181,10 @@ def cmd_show_chapter(args):
         if ch.get("validation_status"):
             status_label = f"[{ch['validation_status'].upper()}]"
             print(f"Gate:    {status_label} - {ch.get('validation_message')}")
+        if ch.get("hallucination_score") is not None:
+            pct = int(round(ch["hallucination_score"] * 100))
+            h_claims = ch.get("hallucinated_claims") or []
+            print(f"NLI:     {pct}% Faithful ({len(h_claims)} hallucinated claims)")
         print(f"\nPrompt:\n  {ch['prompt']}")
         print(f"\nResult:\n  {ch['result']}")
         if ch.get("metadata"):
@@ -206,6 +210,10 @@ def cmd_show_chapter(args):
     if chapter.validation_status:
         status_label = f"[{chapter.validation_status.upper()}]"
         print(f"Gate:    {status_label} - {chapter.validation_message}")
+    if chapter.hallucination_score is not None:
+        pct = int(round(chapter.hallucination_score * 100))
+        h_claims = chapter.hallucinated_claims or []
+        print(f"NLI:     {pct}% Faithful ({len(h_claims)} hallucinated claims)")
     print(f"\nPrompt:\n  {chapter.prompt}")
     print(f"\nResult:\n  {chapter.result}")
     if chapter.metadata:
@@ -575,6 +583,15 @@ def cmd_diff_books(args):
                         print(f"  Gate: [FIXED: FAILED -> PASSED] - {gt.get('message')}")
                     elif step.get("chapter_b", {}).get("validation_status"):
                         print(f"  Gate: [{step['chapter_b']['validation_status'].upper()}]")
+                if step.get("nli_faithfulness"):
+                    nli = step["nli_faithfulness"]
+                    score_b_pct = int(round(nli["score_b"] * 100))
+                    if nli.get("is_regression"):
+                        print(f"  NLI:  [HALLUCINATION REGRESSION] Faithfulness dropped to {score_b_pct}% (delta: {nli['delta']:+.2f})")
+                        for claim in nli.get("hallucinated_claims", []):
+                            print(f"        ! Hallucinated: \"{claim}\"")
+                    else:
+                        print(f"  NLI:  Faithfulness: {score_b_pct}% (delta: {nli['delta']:+.2f})")
                 if not step["are_identical"]:
                     if step["chapter_a"]["prompt"] != step["chapter_b"]["prompt"]:
                         print("  Prompt Changes:")
@@ -667,6 +684,22 @@ def cmd_diff_books(args):
                         print(f"  Gate: [FIXED: FAILED -> PASSED] - {ch_b.validation_message}")
                     elif val_b:
                         print(f"  Gate: [{val_b.upper()}]")
+                    from nli import get_nli_engine
+                    engine = get_nli_engine()
+                    res_a = engine.evaluate(ch_a.prompt, ch_a.result)
+                    res_b = engine.evaluate(ch_b.prompt, ch_b.result)
+                    score_a = ch_a.hallucination_score if ch_a.hallucination_score is not None else res_a["faithfulness_score"]
+                    score_b = ch_b.hallucination_score if ch_b.hallucination_score is not None else res_b["faithfulness_score"]
+                    is_h_reg = bool(score_b < score_a and score_b < 0.70)
+                    score_b_pct = int(round(score_b * 100))
+                    delta = round(score_b - score_a, 2)
+                    if is_h_reg:
+                        print(f"  NLI:  [HALLUCINATION REGRESSION] Faithfulness dropped to {score_b_pct}% (delta: {delta:+.2f})")
+                        claims = ch_b.hallucinated_claims or res_b["hallucinated_sentences"]
+                        for claim in claims:
+                            print(f"        ! Hallucinated: \"{claim}\"")
+                    else:
+                        print(f"  NLI:  Faithfulness: {score_b_pct}% (delta: {delta:+.2f})")
                     if not identical:
                         if ch_a.prompt != ch_b.prompt:
                             print("  Prompt Changes:")
@@ -690,6 +723,75 @@ def cmd_diff_books(args):
                             )
                             for d_line in r_diff:
                                 print(f"    {d_line}")
+
+
+def cmd_check_hallucination(args):
+    """Run local Natural Language Inference (NLI) to detect hallucinated claims."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        try:
+            res = client.request("POST", f"/chapter/{args.chapter_id}/check-hallucination")
+        except RuntimeError as e:
+            print(f"Error checking chapter '{args.chapter_id}': {e}")
+            return
+
+        score = res.get("faithfulness_score", 1.0)
+        pct = int(round(score * 100))
+        is_hallucinating = res.get("hallucination_detected", False)
+        claims = res.get("hallucinated_sentences", [])
+
+        print("=" * 60)
+        print(f"NLI HALLUCINATION REPORT: {args.chapter_id}")
+        print("=" * 60)
+        status_lbl = "HALLUCINATION DETECTED" if is_hallucinating else "PASSED (FAITHFUL)"
+        print(f"Status:              {status_lbl}")
+        print(f"Faithfulness Score:  {pct}%")
+        print(f"Contradictions:      {len(claims)}")
+        print(f"Backend:             {res.get('nli_backend', 'local_nli')}")
+        if claims:
+            print("\nHallucinated Claims:")
+            for c in claims:
+                print(f"  ! {c}")
+        print("=" * 60)
+        return
+
+    from nli import get_nli_engine
+    with contextlib.closing(get_connection()) as conn:
+        init_db(conn)
+        chapter = get_chapter(args.chapter_id, conn)
+        if chapter is None:
+            print(f"Chapter '{args.chapter_id}' not found.")
+            return
+
+        engine = get_nli_engine()
+        report = engine.evaluate(chapter.prompt, chapter.result)
+        chapter.hallucination_score = report["faithfulness_score"]
+        chapter.hallucinated_claims = report["hallucinated_sentences"]
+        conn.execute(
+            "UPDATE chapters SET hallucination_score = ?, hallucinated_claims = ? WHERE id = ?",
+            (chapter.hallucination_score, json.dumps(chapter.hallucinated_claims), chapter.id)
+        )
+        conn.commit()
+
+    score = report["faithfulness_score"]
+    pct = int(round(score * 100))
+    is_hallucinating = report["hallucination_detected"]
+    claims = report["hallucinated_sentences"]
+
+    print("=" * 60)
+    print(f"NLI HALLUCINATION REPORT: {args.chapter_id}")
+    print("=" * 60)
+    status_lbl = "HALLUCINATION DETECTED" if is_hallucinating else "PASSED (FAITHFUL)"
+    print(f"Status:              {status_lbl}")
+    print(f"Faithfulness Score:  {pct}%")
+    print(f"Contradictions:      {len(claims)}")
+    print(f"Backend:             {report['backend']}")
+    if claims:
+        print("\nHallucinated Claims:")
+        for c in claims:
+            print(f"  ! {c}")
+    print("=" * 60)
 
 
 def cmd_dashboard(args):
@@ -781,6 +883,11 @@ def main():
     p.add_argument("book_a", help="First book ID")
     p.add_argument("book_b", help="Second book ID")
     p.set_defaults(func=cmd_diff_books)
+
+    # check-hallucination
+    p = sub.add_parser("check-hallucination", help="Run local NLI to pinpoint hallucinated claims in a chapter")
+    p.add_argument("chapter_id", help="Chapter ID (e.g., c_001)")
+    p.set_defaults(func=cmd_check_hallucination)
 
     # dashboard
     p = sub.add_parser("dashboard", help="Open the Web Dashboard in the browser")

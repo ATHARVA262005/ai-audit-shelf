@@ -695,6 +695,13 @@ def test_cli_operations(capsys):
     assert "STEP-BY-STEP SEMANTIC CHANGES" in captured.out
     assert "Step 1: c_001 -> c_001 [IDENTICAL]" in captured.out
 
+    # 13. Test CLI check-hallucination command
+    check_h_args = argparse.Namespace(chapter_id="c_001")
+    cli.cmd_check_hallucination(check_h_args)
+    captured = capsys.readouterr()
+    assert "NLI HALLUCINATION REPORT: c_001" in captured.out
+    assert "Faithfulness Score:" in captured.out
+
 
 def test_cli_shared_api_client(capsys, monkeypatch):
     """Test that CLI commands operate directly as HTTP clients on the shared API."""
@@ -748,3 +755,98 @@ def test_api_serves_react_dashboard():
     assert "react.production.min.js" in response.text
     assert "AI Audit Shelf" in response.text
 
+
+
+def test_local_nli_engine():
+    """Verify LocalNLIEngine accurately classifies entailment vs contradictions (hallucinations)."""
+    from nli import LocalNLIEngine
+
+    engine = LocalNLIEngine()
+
+    # Case 1: Faithful summary
+    premise = "The quarterly revenue grew by 15% reaching 10 million dollars in Q3."
+    hypothesis_faithful = "Q3 revenue reached 10 million dollars with a 15% increase."
+    res1 = engine.evaluate(premise, hypothesis_faithful)
+    assert res1["faithfulness_score"] == 1.0
+    assert not res1["hallucination_detected"]
+    assert len(res1["hallucinated_sentences"]) == 0
+
+    # Case 2: Numerical hallucination (conflicting numbers)
+    hypothesis_hallucinated = "The company lost 50 million dollars in Q3 revenue."
+    res2 = engine.evaluate(premise, hypothesis_hallucinated)
+    assert res2["faithfulness_score"] < 0.70
+    assert res2["hallucination_detected"]
+    assert len(res2["hallucinated_sentences"]) > 0
+
+    # Case 3: Negation polarity contradiction
+    premise3 = "The deployment succeeded without errors."
+    hypothesis3 = "The deployment did not succeed and failed completely."
+    res3 = engine.evaluate(premise3, hypothesis3)
+    assert res3["faithfulness_score"] < 0.70
+    assert res3["hallucination_detected"]
+
+
+def test_api_check_hallucination_endpoint():
+    """Verify POST /chapter/{id}/check-hallucination evaluates and persists hallucination scores."""
+    create_resp = client.post("/chapter", json={
+        "prompt": "Provide the launch date for Project Apollo: July 16, 1969.",
+        "result": "Project Apollo was launched on December 25, 2010.",
+        "actor": "hallucination_tester",
+        "source": "unit_test"
+    })
+    assert create_resp.status_code == 200
+    chapter_id = create_resp.json()["chapter"]["id"]
+
+    # Call NLI check endpoint
+    nli_resp = client.post(f"/chapter/{chapter_id}/check-hallucination")
+    assert nli_resp.status_code == 200
+    data = nli_resp.json()
+    assert data["chapter_id"] == chapter_id
+    assert data["hallucination_detected"] is True
+    assert data["faithfulness_score"] < 0.70
+    assert len(data["hallucinated_sentences"]) > 0
+
+    # Verify persisted in chapter
+    get_resp = client.get(f"/chapter/{chapter_id}")
+    assert get_resp.status_code == 200
+    saved_ch = get_resp.json()
+    assert saved_ch["hallucination_score"] == data["faithfulness_score"]
+    assert len(saved_ch["hallucinated_claims"]) > 0
+
+
+def test_diff_with_nli_hallucination_regression():
+    """Verify /diff/books flags hallucination regressions when prompt revisions induce fabricated claims."""
+    # Version 1: Grounded and faithful
+    ch1 = client.post("/chapter", json={
+        "prompt": "The server latency is 45ms.",
+        "result": "Server latency is measured at 45ms.",
+        "actor": "dev",
+        "source": "nli_diff_test"
+    }).json()["chapter"]["id"]
+
+    b1 = client.post("/book?title=NLI+Diff+v1&feature=Latency", json=[ch1]).json()["book"]["id"]
+
+    # Version 2: Modified prompt causing hallucinated metrics
+    ch2 = client.post("/chapter", json={
+        "prompt": "The server latency is 45ms.",
+        "result": "The server latency is 999ms with 90% packet loss.",
+        "actor": "dev",
+        "source": "nli_diff_test"
+    }).json()["chapter"]["id"]
+
+    b2 = client.post(f"/book/{b1}/edition", json={
+        "title": "NLI Diff v2",
+        "chapter_ids": [ch2]
+    }).json()["book"]["id"]
+
+    diff_resp = client.get(f"/diff/books?id_a={b1}&id_b={b2}")
+    assert diff_resp.status_code == 200
+    diff_data = diff_resp.json()
+    assert len(diff_data["steps_comparison"]) == 1
+    step = diff_data["steps_comparison"][0]
+
+    assert "nli_faithfulness" in step
+    nli_meta = step["nli_faithfulness"]
+    assert nli_meta["is_regression"] is True
+    assert nli_meta["delta"] < 0
+    assert len(nli_meta["hallucinated_claims"]) > 0
