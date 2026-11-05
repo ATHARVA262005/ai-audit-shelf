@@ -74,6 +74,11 @@ def _get_api_client(args) -> tuple[AuditApiClient, bool]:
     if args and getattr(args, "local", False):
         return AuditApiClient(), False
 
+    # Prevent unit tests from accidentally hitting an external production server
+    # unless an explicit --api-url was specified on args
+    if "PYTEST_CURRENT_TEST" in os.environ and not (args and getattr(args, "api_url", None)):
+        return AuditApiClient(), False
+
     explicit_url = getattr(args, "api_url", None) if args else None
     explicit_key = getattr(args, "api_key", None) if args else None
     client = AuditApiClient(base_url=explicit_url, api_key=explicit_key)
