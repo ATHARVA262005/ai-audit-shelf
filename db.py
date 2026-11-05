@@ -15,7 +15,7 @@ _id_lock = threading.Lock()
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")  # Graceful write contention wait

@@ -226,3 +226,7 @@ __marimo__/
 
 # Test Databases
 test_audit.db
+# Frontend
+node_modules/
+dist/
+

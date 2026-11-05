@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from fastapi import FastAPI, HTTPException, Query, Depends, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, HTMLResponse
 
 from models import Chapter, Book
 from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
@@ -88,7 +88,7 @@ logging.basicConfig(
 logger = logging.getLogger("ai_audit")
 
 # Secure default CORS configuration: do not default to "*" wildcard (resolving SEC-09)
-CORS_ORIGINS_RAW = os.environ.get("AUDIT_CORS_ORIGINS", "http://localhost:8000")
+CORS_ORIGINS_RAW = os.environ.get("AUDIT_CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
 CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_RAW.split(",") if origin.strip()]
 allow_creds = CORS_ORIGINS != ["*"]
 
@@ -647,6 +647,18 @@ def api_backup_db():
     except Exception as e:
         logger.error(f"Database online backup failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Database backup failed: {str(e)}")
+
+
+@app.get("/", response_class=HTMLResponse)
+def get_dashboard():
+    """Serve the single-file web dashboard directly from the same origin to avoid CORS issues."""
+    dashboard_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
+    try:
+        with open(dashboard_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    except Exception as e:
+        logger.error(f"Failed to serve dashboard: {str(e)}")
+        raise HTTPException(status_code=500, detail="Dashboard file not found or unreadable.")
 
 
 if __name__ == "__main__":

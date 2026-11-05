@@ -1,37 +1,144 @@
-"""CLI interface for the AI Audit system."""
+"""CLI interface for the AI Audit system.
+
+Acts as an HTTP client on the shared FastAPI REST API, with seamless local
+SQLite fallback for offline operations.
+"""
 
 import argparse
 import json
 import sys
+import os
 import contextlib
+import webbrowser
+import urllib.request
+import urllib.parse
+import urllib.error
 from datetime import datetime, timezone
 
 from models import Chapter, Book
 from db import get_connection, init_db, next_id, save_chapter, get_chapter, list_chapters, save_book, get_book, list_books
 
 
+class AuditApiClient:
+    """Lightweight zero-dependency HTTP client for the AI Audit REST API."""
+
+    def __init__(self, base_url: str = None, api_key: str = None):
+        self.base_url = (base_url or os.environ.get("AUDIT_API_URL") or "http://127.0.0.1:8000").rstrip("/")
+        self.api_key = api_key or os.environ.get("AUDIT_API_KEY") or os.environ.get("AUDIT_READ_API_KEY") or ""
+
+    def is_available(self) -> bool:
+        """Probe the server health check endpoint with a short timeout."""
+        try:
+            req = urllib.request.Request(f"{self.base_url}/health")
+            with urllib.request.urlopen(req, timeout=0.6) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def request(self, method: str, path: str, params: dict = None, json_body: dict = None, accept: str = "application/json"):
+        """Execute an HTTP request against the API server."""
+        url = f"{self.base_url}{path}"
+        if params:
+            clean_params = {k: v for k, v in params.items() if v is not None}
+            if clean_params:
+                url += "?" + urllib.parse.urlencode(clean_params, doseq=True)
+
+        data = None
+        headers = {"Accept": accept}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+
+        if json_body is not None:
+            data = json.dumps(json_body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+                content_type = resp.headers.get("Content-Type", "")
+                if "application/json" in content_type:
+                    return json.loads(raw.decode("utf-8"))
+                return raw.decode("utf-8")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8")
+            try:
+                detail = json.loads(err_body).get("detail", err_body)
+            except Exception:
+                detail = err_body
+            raise RuntimeError(f"API Error ({e.code}): {detail}")
+
+
+def _get_api_client(args) -> tuple[AuditApiClient, bool]:
+    """Return an initialized AuditApiClient and whether API mode should be used."""
+    if args and getattr(args, "local", False):
+        return AuditApiClient(), False
+
+    explicit_url = getattr(args, "api_url", None) if args else None
+    explicit_key = getattr(args, "api_key", None) if args else None
+    client = AuditApiClient(base_url=explicit_url, api_key=explicit_key)
+
+    if explicit_url:
+        return client, True
+
+    # Auto-detect if API server is running
+    return client, client.is_available()
+
+
+# --- CLI Commands ---
+
 def cmd_add_chapter(args):
-    """Log a new chapter (atomic AI action)."""
-    with contextlib.closing(get_connection()) as conn:
-        init_db(conn)
-        chapter_id = next_id(conn, "chapter")
-        chapter = Chapter(
-            id=chapter_id,
-            prompt=args.prompt,
-            result=args.result,
-            actor=args.actor or "anonymous",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            source=args.source or "manual",
-            model=args.model,
-            temperature=args.temperature,
-            seed=args.seed,
-        )
-        save_chapter(chapter, conn)
+    """Log a new chapter (atomic AI action) via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        payload = {
+            "prompt": args.prompt,
+            "result": args.result,
+            "actor": args.actor or "anonymous",
+            "source": args.source or "manual",
+            "model": args.model,
+            "temperature": args.temperature,
+            "seed": args.seed,
+        }
+        res = client.request("POST", "/chapter", json_body=payload)
+        chapter_id = res["chapter"]["id"]
+    else:
+        with contextlib.closing(get_connection()) as conn:
+            init_db(conn)
+            chapter_id = next_id(conn, "chapter")
+            chapter = Chapter(
+                id=chapter_id,
+                prompt=args.prompt,
+                result=args.result,
+                actor=args.actor or "anonymous",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                source=args.source or "manual",
+                model=args.model,
+                temperature=args.temperature,
+                seed=args.seed,
+            )
+            save_chapter(chapter, conn)
+
     print(f"Chapter {chapter_id} logged.")
 
 
 def cmd_list_chapters(args):
-    """List all chapters."""
+    """List all chapters via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        chapters = client.request("GET", "/chapters", params={"limit": 100})
+        if not chapters:
+            print("No chapters yet.")
+            return
+        print(f"{'ID':<8} {'Timestamp':<28} {'Prompt'}")
+        print("-" * 80)
+        for ch in chapters:
+            prompt_short = ch["prompt"][:45] + "..." if len(ch["prompt"]) > 45 else ch["prompt"]
+            print(f"{ch['id']:<8} {ch['timestamp']:<28} {prompt_short}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         chapters = list_chapters(conn)
@@ -46,7 +153,35 @@ def cmd_list_chapters(args):
 
 
 def cmd_show_chapter(args):
-    """Show details of a specific chapter."""
+    """Show details of a specific chapter via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        try:
+            ch = client.request("GET", f"/chapter/{args.chapter_id}")
+        except RuntimeError:
+            print(f"Chapter '{args.chapter_id}' not found.")
+            return
+
+        print(f"Chapter: {ch['id']}")
+        print(f"Actor:   {ch['actor']}")
+        print(f"Source:  {ch['source']}")
+        print(f"Time:    {ch['timestamp']}")
+        if ch.get("model"):
+            print(f"Model:   {ch['model']}")
+        if ch.get("temperature") is not None:
+            print(f"Temp:    {ch['temperature']}")
+        if ch.get("seed") is not None:
+            print(f"Seed:    {ch['seed']}")
+        if ch.get("validation_status"):
+            status_label = f"[{ch['validation_status'].upper()}]"
+            print(f"Gate:    {status_label} - {ch.get('validation_message')}")
+        print(f"\nPrompt:\n  {ch['prompt']}")
+        print(f"\nResult:\n  {ch['result']}")
+        if ch.get("metadata"):
+            print(f"\nMetadata: {ch['metadata']}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         chapter = get_chapter(args.chapter_id, conn)
@@ -73,11 +208,25 @@ def cmd_show_chapter(args):
 
 
 def cmd_create_book(args):
-    """Bundle chapters into a book (feature)."""
+    """Bundle chapters into a book via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        payload = {
+            "title": args.title,
+            "chapter_ids": args.chapter_ids,
+            "feature": args.feature or args.title,
+        }
+        try:
+            res = client.request("POST", "/book", json_body=payload)
+            book = res["book"]
+            print(f'Book {book["id"]} created: "{book["title"]}" with {len(book["chapter_ids"])} chapters.')
+        except RuntimeError as e:
+            print(f"Error: {e}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
-
-        # Validate chapter IDs exist
         for cid in args.chapter_ids:
             if get_chapter(cid, conn) is None:
                 print(f"Error: Chapter '{cid}' not found.")
@@ -93,11 +242,24 @@ def cmd_create_book(args):
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         save_book(book, conn)
-    print(f"Book {book_id} created: \"{args.title}\" with {len(args.chapter_ids)} chapters.")
+    print(f'Book {book_id} created: "{args.title}" with {len(args.chapter_ids)} chapters.')
 
 
 def cmd_list_books(args):
-    """List all books (the bookshelf)."""
+    """List all books via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        books = client.request("GET", "/books")
+        if not books:
+            print("Bookshelf is empty.")
+            return
+        print(f"{'ID':<8} {'Ver':<5} {'Chapters':<10} {'Title'}")
+        print("-" * 60)
+        for b in books:
+            print(f"{b['id']:<8} v{b['version']:<4} {len(b['chapter_ids']):<10} {b['title']}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         books = list_books(conn)
@@ -111,7 +273,34 @@ def cmd_list_books(args):
 
 
 def cmd_show_book(args):
-    """Show details and chapters of a book."""
+    """Show details and chapters of a book via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        try:
+            book = client.request("GET", f"/book/{args.book_id}")
+        except RuntimeError:
+            print(f"Book '{args.book_id}' not found.")
+            return
+
+        print(f"Book:     {book['id']}")
+        print(f"Title:    {book['title']}")
+        print(f"Feature:  {book['feature']}")
+        print(f"Version:  {book['version']}")
+        print(f"Created:  {book['created_at']}")
+        if book.get("parent_book_id"):
+            print(f"Parent:   {book['parent_book_id']}")
+        print(f"\nChapters ({len(book['chapter_ids'])}):")
+        print("-" * 60)
+        for cid in book["chapter_ids"]:
+            try:
+                ch = client.request("GET", f"/chapter/{cid}")
+                prompt_short = ch["prompt"][:50] + "..." if len(ch["prompt"]) > 50 else ch["prompt"]
+                print(f"  {ch['id']:<8} {prompt_short}")
+            except Exception:
+                print(f"  {cid:<8} [missing]")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         book = get_book(args.book_id, conn)
@@ -138,16 +327,30 @@ def cmd_show_book(args):
 
 
 def cmd_new_edition(args):
-    """Create a new edition of a book (version bump with modifications)."""
+    """Create a new edition of a book via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        payload = {}
+        if args.title:
+            payload["title"] = args.title
+        if args.chapter_ids:
+            payload["chapter_ids"] = args.chapter_ids
+        try:
+            res = client.request("POST", f"/book/{args.book_id}/edition", json_body=payload if payload else None)
+            new_book = res["book"]
+            print(f'Book {new_book["id"]} created as v{new_book["version"]} of "{new_book["title"]}" (parent: {new_book["parent_book_id"]}).')
+        except RuntimeError as e:
+            print(f"Error: {e}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
-
         parent = get_book(args.book_id, conn)
         if parent is None:
             print(f"Book '{args.book_id}' not found.")
             return
 
-        # Validate new chapter IDs
         chapter_ids = args.chapter_ids or parent.chapter_ids
         for cid in chapter_ids:
             if get_chapter(cid, conn) is None:
@@ -165,11 +368,29 @@ def cmd_new_edition(args):
             parent_book_id=parent.id,
         )
         save_book(new_book, conn)
-    print(f"Book {new_book_id} created as v{new_book.version} of \"{new_book.title}\" (parent: {parent.id}).")
+    print(f'Book {new_book_id} created as v{new_book.version} of "{new_book.title}" (parent: {parent.id}).')
 
 
 def cmd_shelf(args):
-    """Display the library organized by feature."""
+    """Display the library organized by feature via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        features = client.request("GET", "/shelf")
+        if not features:
+            print("Library is empty.")
+            return
+
+        print("LIBRARY SHELF")
+        print("=" * 60)
+        for feature, feature_books in features.items():
+            print(f"\n[{feature}]")
+            for b in feature_books:
+                marker = "  " if b["version"] == 1 else "  *"
+                print(f"{marker} {b['id']} v{b['version']} - {b['title']} ({len(b['chapter_ids'])} chapters)")
+        print()
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         books = list_books(conn)
@@ -177,7 +398,6 @@ def cmd_shelf(args):
         print("Library is empty.")
         return
 
-    # Group by feature
     features: dict[str, list[Book]] = {}
     for b in books:
         features.setdefault(b.feature, []).append(b)
@@ -193,7 +413,21 @@ def cmd_shelf(args):
 
 
 def cmd_export_book(args):
-    """Export a book as JSON or Markdown."""
+    """Export a book as JSON or Markdown via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        try:
+            if args.format == "json":
+                data = client.request("GET", f"/export/book/{args.book_id}", params={"format": "json"})
+                print(json.dumps(data, indent=2))
+            else:
+                data = client.request("GET", f"/export/book/{args.book_id}", params={"format": "markdown"}, accept="text/markdown")
+                print(data)
+        except RuntimeError:
+            print(f"Book '{args.book_id}' not found.")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         book = get_book(args.book_id, conn)
@@ -235,7 +469,27 @@ def cmd_export_book(args):
 
 
 def cmd_search_chapters(args):
-    """Search chapters by actor, keyword, or date range."""
+    """Search chapters by actor, keyword, or date range via the shared REST API or local storage."""
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        params = {
+            "actor": getattr(args, "actor", None),
+            "keyword": getattr(args, "keyword", None),
+            "after": getattr(args, "after", None),
+            "before": getattr(args, "before", None),
+        }
+        results = client.request("GET", "/search/chapters", params=params)
+        if not results:
+            print("No matching chapters found.")
+            return
+        print(f"{'ID':<8} {'Actor':<12} {'Source':<10} {'Timestamp':<28} {'Prompt'}")
+        print("-" * 100)
+        for ch in results:
+            prompt_short = ch["prompt"][:35] + "..." if len(ch["prompt"]) > 35 else ch["prompt"]
+            print(f"{ch['id']:<8} {ch['actor']:<12} {ch['source']:<10} {ch['timestamp']:<28} {prompt_short}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         chapters = list_chapters(conn)
@@ -262,7 +516,77 @@ def cmd_search_chapters(args):
 
 
 def cmd_diff_books(args):
-    """Compare two book editions — show added/removed/changed chapters."""
+    """Compare two book editions via the shared REST API or local storage."""
+    import difflib
+    client, use_api = _get_api_client(args)
+
+    if use_api:
+        try:
+            diff = client.request("GET", "/diff/books", params={"id_a": args.book_a, "id_b": args.book_b})
+        except RuntimeError:
+            print(f"Error fetching diff for {args.book_a} and {args.book_b}")
+            return
+
+        book_a = diff["book_a"]
+        book_b = diff["book_b"]
+        kept = diff["kept"]
+        added = diff["added"]
+        removed = diff["removed"]
+        steps = diff.get("steps_comparison", [])
+
+        print(f"DIFF: {book_a['id']} (v{book_a['version']}) -> {book_b['id']} (v{book_b['version']})")
+        print("=" * 60)
+
+        if kept:
+            print(f"\n  Kept ({len(kept)}):")
+            for item in kept:
+                print(f"    = {item['id']}  {item['prompt'][:50]}")
+
+        if added:
+            print(f"\n  Added ({len(added)}):")
+            for item in added:
+                print(f"    + {item['id']}  {item['prompt'][:50]}")
+
+        if removed:
+            print(f"\n  Removed ({len(removed)}):")
+            for item in removed:
+                print(f"    - {item['id']}  {item['prompt'][:50]}")
+
+        if not added and not removed:
+            print("\n  No chapter changes between these editions.")
+
+        if steps:
+            print("\n" + "=" * 60)
+            print("  STEP-BY-STEP SEMANTIC CHANGES")
+            print("=" * 60)
+            for idx, step in enumerate(steps):
+                status_lbl = "IDENTICAL" if step["are_identical"] else "MODIFIED"
+                print(f"\nStep {idx+1}: {step['chapter_a']['id']} -> {step['chapter_b']['id']} [{status_lbl}]")
+                if not step["are_identical"]:
+                    if step["chapter_a"]["prompt"] != step["chapter_b"]["prompt"]:
+                        print("  Prompt Changes:")
+                        p_diff = difflib.unified_diff(
+                            step["chapter_a"]["prompt"].splitlines(),
+                            step["chapter_b"]["prompt"].splitlines(),
+                            fromfile="prompt_v1",
+                            tofile="prompt_v2",
+                            lineterm=""
+                        )
+                        for d_line in p_diff:
+                            print(f"    {d_line}")
+                    if step["chapter_a"]["result"] != step["chapter_b"]["result"]:
+                        print("  Result/Output Changes:")
+                        r_diff = difflib.unified_diff(
+                            step["chapter_a"]["result"].splitlines(),
+                            step["chapter_b"]["result"].splitlines(),
+                            fromfile="result_v1",
+                            tofile="result_v2",
+                            lineterm=""
+                        )
+                        for d_line in r_diff:
+                            print(f"    {d_line}")
+        return
+
     with contextlib.closing(get_connection()) as conn:
         init_db(conn)
         book_a = get_book(args.book_a, conn)
@@ -308,13 +632,11 @@ def cmd_diff_books(args):
         if not added and not removed:
             print("\n  No chapter changes between these editions.")
 
-        # Step-by-Step Semantic Comparison for prompt engineers
         min_len = min(len(book_a.chapter_ids), len(book_b.chapter_ids))
         if min_len > 0:
             print("\n" + "=" * 60)
             print("  STEP-BY-STEP SEMANTIC CHANGES")
             print("=" * 60)
-            import difflib
             for idx in range(min_len):
                 cid_a = book_a.chapter_ids[idx]
                 cid_b = book_b.chapter_ids[idx]
@@ -325,7 +647,6 @@ def cmd_diff_books(args):
                     status_lbl = "IDENTICAL" if identical else "MODIFIED"
                     print(f"\nStep {idx+1}: {cid_a} -> {cid_b} [{status_lbl}]")
                     if not identical:
-                        # Print unified diff of prompt and result
                         if ch_a.prompt != ch_b.prompt:
                             print("  Prompt Changes:")
                             p_diff = difflib.unified_diff(
@@ -350,7 +671,16 @@ def cmd_diff_books(args):
                                 print(f"    {d_line}")
 
 
+def cmd_dashboard(args):
+    """Open the React Web Dashboard in the default browser."""
+    client = AuditApiClient(base_url=getattr(args, "api_url", None))
+    url = f"{client.base_url}/"
+    print(f"Opening AI Audit React Dashboard at {url}...")
+    webbrowser.open(url)
+
+
 __version__ = "0.2.0"
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -358,6 +688,10 @@ def main():
         description="AI Audit - Git-like versioning for AI workflows, organized as books and chapters.",
     )
     parser.add_argument("--version", action="version", version=f"AI Audit CLI v{__version__}")
+    parser.add_argument("--api-url", help="Shared REST API base URL (default: http://127.0.0.1:8000)")
+    parser.add_argument("--api-key", help="API authentication key (or AUDIT_API_KEY environment variable)")
+    parser.add_argument("--local", action="store_true", help="Force local SQLite execution (offline mode)")
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     # add-chapter
@@ -370,7 +704,6 @@ def main():
     p.add_argument("--temperature", type=float, help="Generation temperature (e.g. 0.7)")
     p.add_argument("--seed", type=int, help="Generation random seed")
     p.set_defaults(func=cmd_add_chapter)
-
 
     # list-chapters
     p = sub.add_parser("list-chapters", help="List all chapters")
@@ -427,6 +760,10 @@ def main():
     p.add_argument("book_a", help="First book ID")
     p.add_argument("book_b", help="Second book ID")
     p.set_defaults(func=cmd_diff_books)
+
+    # dashboard
+    p = sub.add_parser("dashboard", help="Open the Web Dashboard in the browser")
+    p.set_defaults(func=cmd_dashboard)
 
     args = parser.parse_args()
     args.func(args)

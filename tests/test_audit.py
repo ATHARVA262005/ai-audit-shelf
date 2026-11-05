@@ -671,3 +671,57 @@ def test_cli_operations(capsys):
     assert "DIFF: b_001 (v1) -> b_002 (v2)" in captured.out
     assert "STEP-BY-STEP SEMANTIC CHANGES" in captured.out
     assert "Step 1: c_001 -> c_001 [IDENTICAL]" in captured.out
+
+
+def test_cli_shared_api_client(capsys, monkeypatch):
+    """Test that CLI commands operate directly as HTTP clients on the shared API."""
+    import argparse
+    import cli
+
+    # Route AuditApiClient directly to the FastAPI TestClient
+    def mock_request(self, method, path, params=None, json_body=None, accept="application/json"):
+        if method == "POST":
+            resp = client.post(path, params=params, json=json_body)
+        elif method == "GET":
+            resp = client.get(path, params=params)
+        else:
+            raise NotImplementedError(method)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"API Error ({resp.status_code}): {resp.text}")
+        if "application/json" in resp.headers.get("Content-Type", ""):
+            return resp.json()
+        return resp.text
+
+    monkeypatch.setattr(cli.AuditApiClient, "is_available", lambda self: True)
+    monkeypatch.setattr(cli.AuditApiClient, "request", mock_request)
+
+    # 1. Add chapter via API-backed CLI
+    add_args = argparse.Namespace(
+        prompt="API-backed prompt",
+        result="API-backed result",
+        actor="api_cli_user",
+        source="cli_http",
+        model="gpt-4o-mini",
+        temperature=0.3,
+        seed=42,
+        api_url="http://127.0.0.1:8000"
+    )
+    cli.cmd_add_chapter(add_args)
+    captured = capsys.readouterr()
+    assert "Chapter c_001 logged." in captured.out
+
+    # 2. List chapters via API-backed CLI
+    list_args = argparse.Namespace(api_url="http://127.0.0.1:8000")
+    cli.cmd_list_chapters(list_args)
+    captured = capsys.readouterr()
+    assert "c_001" in captured.out
+    assert "API-backed prompt" in captured.out
+
+
+def test_api_serves_react_dashboard():
+    """Verify that FastAPI root endpoint successfully serves the React 18 dashboard."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "react.production.min.js" in response.text
+    assert "AI Audit Shelf" in response.text
+

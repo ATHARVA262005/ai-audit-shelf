@@ -149,21 +149,22 @@ export AUDIT_API_KEY=secret123
 
 ---
 
-### 3. Web Dashboard
+### 3. React Web Dashboard
 
-Visual interface for browsing, searching, and diffing.
+Interactive React 18 single-page application for browsing, searching, validation gate telemetry, and semantic diffing.
 
 ```bash
 # Start the API server
 python api.py
 
-# Open the dashboard
-open dashboard.html    # macOS
-start dashboard.html   # Windows
-xdg-open dashboard.html  # Linux
+# Open the dashboard in your browser
+python cli.py dashboard
 ```
 
-The dashboard connects to `http://localhost:8000` and provides:
+Alternatively, you can open your browser directly and navigate to:
+👉 **[http://127.0.0.1:8000/](http://127.0.0.1:8000/)**
+
+The dashboard connects to `http://127.0.0.1:8000` and provides:
 
 - **Library** — bookshelf grouped by feature
 - **Books** — table view with export buttons
@@ -218,9 +219,10 @@ Inside, you will find complete, typed examples for:
 aiAudit/
 ├── models.py         # Chapter and Book dataclasses
 ├── db.py             # SQLite storage layer
-├── cli.py            # CLI (11 commands)
-├── api.py            # FastAPI server (11 endpoints)
-├── dashboard.html    # Web UI (single file, no build)
+├── cli.py            # HTTP CLI Client on shared API (12 commands, offline fallback)
+├── api.py            # FastAPI server (14 REST endpoints)
+├── dashboard.html    # React 18 single-page web dashboard (no build step needed)
+├── frontend/         # React 18 + Vite developer package
 ├── demo_agent.py     # Integration demo
 └── audit.db          # SQLite database (auto-created)
 ```
