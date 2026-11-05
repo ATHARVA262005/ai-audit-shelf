@@ -1050,22 +1050,26 @@
         }
       };
 
-      // Calculate total line adds and dels across all steps
+      // Calculate total line adds, dels, and gate regressions across all steps
       const totalStats = useMemo(() => {
-        if (!diffData || !diffData.steps_comparison) return { adds: 0, dels: 0, stepsChanged: 0 };
+        if (!diffData || !diffData.steps_comparison) return { adds: 0, dels: 0, stepsChanged: 0, regressions: 0, fixes: 0 };
         let adds = 0;
         let dels = 0;
         let changed = 0;
+        let regressions = 0;
+        let fixes = 0;
 
         diffData.steps_comparison.forEach(step => {
           if (!step.are_identical) changed++;
+          if (step.gate_transition?.is_regression) regressions++;
+          if (step.gate_transition?.is_fixed) fixes++;
           const p = computeDiffData(step.prompt_diff);
           const r = computeDiffData(step.result_diff);
           adds += p.additions + r.additions;
           dels += p.deletions + r.deletions;
         });
 
-        return { adds, dels, stepsChanged: changed };
+        return { adds, dels, stepsChanged: changed, regressions, fixes };
       }, [diffData]);
 
       // GitHub 5-square diff progress bar
@@ -1207,8 +1211,18 @@
                 </div>
               </div>
 
-              {/* Chapter Composition Delta Pills */}
+              {/* Chapter Composition & Gate Regression Delta Pills */}
               <div className="flex flex-wrap items-center gap-2">
+                {totalStats.regressions > 0 && (
+                  <span className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-red-500/20 text-red-400 border border-red-500/40 flex items-center gap-1.5 shadow-sm">
+                    ⚠️ {totalStats.regressions} Gate Regression{totalStats.regressions > 1 ? "s" : ""} Detected
+                  </span>
+                )}
+                {totalStats.fixes > 0 && (
+                  <span className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm">
+                    ✅ {totalStats.fixes} Gate Fix{totalStats.fixes > 1 ? "es" : ""} Verified
+                  </span>
+                )}
                 {diffData.added.length > 0 && (
                   <span className="px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-[#2ea043]/15 text-[#3fb950] border border-[#2ea043]/30">
                     +{diffData.added.length} Chapters Added
@@ -1229,8 +1243,8 @@
                 <div className="space-y-6">
                   {diffData.steps_comparison.map(step => (
                     <div key={step.step_number} className="space-y-3">
-                      {/* Step Header */}
-                      <div className="flex items-center justify-between px-1">
+                      {/* Step Header with Validation Gate Transition */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
                           <h4 className="font-bold text-sm text-white font-mono">
@@ -1239,16 +1253,46 @@
                           <span className="text-xs font-mono text-indigo-400">
                             {step.chapter_a.id} &rarr; {step.chapter_b.id}
                           </span>
+                          {step.chapter_b.model && (
+                            <span className="text-[11px] text-[#7d8590] font-mono">
+                              ({step.chapter_b.model}{step.chapter_b.temperature !== null ? `, t=${step.chapter_b.temperature}` : ""})
+                            </span>
+                          )}
                         </div>
-                        {step.are_identical ? (
-                          <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-[#21262d] text-[#7d8590] border border-[#30363d]">
-                            IDENTICAL
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            MODIFIED
-                          </span>
-                        )}
+
+                        <div className="flex items-center gap-2">
+                          {/* Validation Gate Transition Badge */}
+                          {step.gate_transition?.is_regression && (
+                            <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1" title={step.gate_transition.message}>
+                              ⚠️ REGRESSION: PASSED &rarr; FAILED
+                            </span>
+                          )}
+                          {step.gate_transition?.is_fixed && (
+                            <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1" title={step.gate_transition.message}>
+                              ✅ GATE FIXED: FAILED &rarr; PASSED
+                            </span>
+                          )}
+                          {!step.gate_transition?.is_regression && !step.gate_transition?.is_fixed && step.chapter_b.validation_status && (
+                            <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                              step.chapter_b.validation_status === "passed"
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                : "bg-red-500/10 text-red-400 border-red-500/20"
+                            }`}>
+                              GATE: {step.chapter_b.validation_status.toUpperCase()}
+                            </span>
+                          )}
+
+                          {/* Identity Badge */}
+                          {step.are_identical ? (
+                            <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-[#21262d] text-[#7d8590] border border-[#30363d]">
+                              IDENTICAL
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              MODIFIED
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* GitHub Diff Boxes for Prompt and Output */}

@@ -559,6 +559,13 @@ def api_diff_books(
         if ch_a and ch_b:
             prompt_diff = list(difflib.ndiff(ch_a.prompt.splitlines(), ch_b.prompt.splitlines()))
             result_diff = list(difflib.ndiff(ch_a.result.splitlines(), ch_b.result.splitlines()))
+
+            # Evaluate validation gate transition between editions
+            val_a = ch_a.validation_status
+            val_b = ch_b.validation_status
+            is_regression = (val_a == "passed" and val_b == "failed")
+            is_fixed = (val_a == "failed" and val_b == "passed")
+
             steps_comparison.append({
                 "step_number": idx + 1,
                 "chapter_a": {
@@ -567,7 +574,9 @@ def api_diff_books(
                     "result": ch_a.result,
                     "model": ch_a.model,
                     "temperature": ch_a.temperature,
-                    "seed": ch_a.seed
+                    "seed": ch_a.seed,
+                    "validation_status": val_a,
+                    "validation_message": ch_a.validation_message,
                 },
                 "chapter_b": {
                     "id": cid_b,
@@ -575,7 +584,17 @@ def api_diff_books(
                     "result": ch_b.result,
                     "model": ch_b.model,
                     "temperature": ch_b.temperature,
-                    "seed": ch_b.seed
+                    "seed": ch_b.seed,
+                    "validation_status": val_b,
+                    "validation_message": ch_b.validation_message,
+                },
+                "gate_transition": {
+                    "from_status": val_a,
+                    "to_status": val_b,
+                    "is_regression": is_regression,
+                    "is_fixed": is_fixed,
+                    "is_unchanged": (val_a == val_b),
+                    "message": ch_b.validation_message or ch_a.validation_message,
                 },
                 "prompt_diff": prompt_diff,
                 "result_diff": result_diff,

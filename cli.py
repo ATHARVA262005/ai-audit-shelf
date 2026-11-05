@@ -567,6 +567,14 @@ def cmd_diff_books(args):
             for idx, step in enumerate(steps):
                 status_lbl = "IDENTICAL" if step["are_identical"] else "MODIFIED"
                 print(f"\nStep {idx+1}: {step['chapter_a']['id']} -> {step['chapter_b']['id']} [{status_lbl}]")
+                if step.get("gate_transition"):
+                    gt = step["gate_transition"]
+                    if gt.get("is_regression"):
+                        print(f"  Gate: [REGRESSION: PASSED -> FAILED] - {gt.get('message')}")
+                    elif gt.get("is_fixed"):
+                        print(f"  Gate: [FIXED: FAILED -> PASSED] - {gt.get('message')}")
+                    elif step.get("chapter_b", {}).get("validation_status"):
+                        print(f"  Gate: [{step['chapter_b']['validation_status'].upper()}]")
                 if not step["are_identical"]:
                     if step["chapter_a"]["prompt"] != step["chapter_b"]["prompt"]:
                         print("  Prompt Changes:")
@@ -651,6 +659,14 @@ def cmd_diff_books(args):
                     identical = (ch_a.prompt == ch_b.prompt and ch_a.result == ch_b.result)
                     status_lbl = "IDENTICAL" if identical else "MODIFIED"
                     print(f"\nStep {idx+1}: {cid_a} -> {cid_b} [{status_lbl}]")
+                    val_a = ch_a.validation_status
+                    val_b = ch_b.validation_status
+                    if val_a == "passed" and val_b == "failed":
+                        print(f"  Gate: [REGRESSION: PASSED -> FAILED] - {ch_b.validation_message}")
+                    elif val_a == "failed" and val_b == "passed":
+                        print(f"  Gate: [FIXED: FAILED -> PASSED] - {ch_b.validation_message}")
+                    elif val_b:
+                        print(f"  Gate: [{val_b.upper()}]")
                     if not identical:
                         if ch_a.prompt != ch_b.prompt:
                             print("  Prompt Changes:")

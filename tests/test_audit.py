@@ -367,6 +367,29 @@ def test_api_diff_books():
     assert step["are_identical"] is False
     assert any(x.startswith("- ") for x in step["prompt_diff"])
     assert any(x.startswith("+ ") for x in step["prompt_diff"])
+    assert "gate_transition" in step
+    assert "validation_status" in step["chapter_a"]
+    assert "validation_status" in step["chapter_b"]
+
+
+def test_diff_with_validation_gate_regression():
+    """Verify that semantic diffing explicitly detects and flags validation gate regressions."""
+    # Chapter 1: passing validation
+    client.post("/chapter", params={"prompt": "P1", "result": "Good output", "validation_status": "passed", "validation_message": "All rules verified"})
+    # Chapter 2: regressed validation
+    client.post("/chapter", params={"prompt": "P1 modified", "result": "Broken output", "validation_status": "failed", "validation_message": "Missing required keyword: revenue"})
+
+    client.post("/book", params={"title": "V1 Flow", "feature": "DiffFeature"}, json=["c_001"])
+    client.post("/book", params={"title": "V2 Flow", "feature": "DiffFeature"}, json=["c_002"])
+
+    resp = client.get("/diff/books", params={"id_a": "b_001", "id_b": "b_002"})
+    assert resp.status_code == 200
+    diff_data = resp.json()
+    step = diff_data["steps_comparison"][0]
+    assert step["gate_transition"]["is_regression"] is True
+    assert step["gate_transition"]["from_status"] == "passed"
+    assert step["gate_transition"]["to_status"] == "failed"
+    assert "Missing required keyword" in step["gate_transition"]["message"]
 
 
 def test_api_validation_gates():
